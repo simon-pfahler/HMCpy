@@ -14,10 +14,10 @@ Conventions (compatible with qcd_ml):
 
 import torch
 
-
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _plaquette(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
     """
@@ -30,14 +30,14 @@ def _plaquette(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
 
     Returns shape [Lx, Ly, Lz, Lt, Nc, Nc].
     """
-    Umu           = U[mu]
-    Unu           = U[nu]
-    Unu_shift_mu  = torch.roll(Unu, -1, dims=mu)   # U_nu(x + mu_hat)
-    Umu_shift_nu  = torch.roll(Umu, -1, dims=nu)   # U_mu(x + nu_hat)
+    Umu = U[mu]
+    Unu = U[nu]
+    Unu_shift_mu = torch.roll(Unu, -1, dims=mu)  # U_nu(x + mu_hat)
+    Umu_shift_nu = torch.roll(Umu, -1, dims=nu)  # U_mu(x + nu_hat)
 
     P = torch.matmul(Umu, Unu_shift_mu)
-    P = torch.matmul(P,   Umu_shift_nu.conj().transpose(-1, -2))
-    P = torch.matmul(P,   Unu.conj().transpose(-1, -2))
+    P = torch.matmul(P, Umu_shift_nu.conj().transpose(-1, -2))
+    P = torch.matmul(P, Unu.conj().transpose(-1, -2))
     return P
 
 
@@ -54,40 +54,31 @@ def _staple(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
     Unu = U[nu]
 
     # Forward staple
-    Unu_fwd    = torch.roll(Unu, -1, dims=mu)           # U_nu(x+mu)
-    Umu_fwd    = torch.roll(Umu, -1, dims=nu)            # U_mu(x+nu)
-    fwd = torch.matmul(Unu_fwd,
-            torch.matmul(Umu_fwd.conj().transpose(-1, -2),
-                         Unu.conj().transpose(-1, -2)))
+    Unu_fwd = torch.roll(Unu, -1, dims=mu)  # U_nu(x+mu)
+    Umu_fwd = torch.roll(Umu, -1, dims=nu)  # U_mu(x+nu)
+    fwd = torch.matmul(
+        Unu_fwd,
+        torch.matmul(
+            Umu_fwd.conj().transpose(-1, -2), Unu.conj().transpose(-1, -2)
+        ),
+    )
 
     # Backward staple
-    Unu_bwd    = torch.roll(Unu,  1, dims=nu)            # U_nu(x-nu)
-    Unu_bwd_mu = torch.roll(Unu_bwd, -1, dims=mu)        # U_nu(x+mu-nu)
-    Umu_bwd    = torch.roll(Umu,  1, dims=nu)            # U_mu(x-nu)
-    bwd = torch.matmul(Unu_bwd_mu.conj().transpose(-1, -2),
-            torch.matmul(Umu_bwd.conj().transpose(-1, -2),
-                         Unu_bwd))
+    Unu_bwd = torch.roll(Unu, 1, dims=nu)  # U_nu(x-nu)
+    Unu_bwd_mu = torch.roll(Unu_bwd, -1, dims=mu)  # U_nu(x+mu-nu)
+    Umu_bwd = torch.roll(Umu, 1, dims=nu)  # U_mu(x-nu)
+    bwd = torch.matmul(
+        Unu_bwd_mu.conj().transpose(-1, -2),
+        torch.matmul(Umu_bwd.conj().transpose(-1, -2), Unu_bwd),
+    )
 
     return fwd + bwd
-
-
-def _project_su3_algebra(Q: torch.Tensor) -> torch.Tensor:
-    """
-    Project a batch of matrices onto the su(3) Lie algebra:
-    returns the traceless anti-Hermitian part.
-
-        X = (Q - Q^dag) / 2  - Tr[(Q - Q^dag)/2] / Nc * I_Nc
-    """
-    Nc = Q.shape[-1]
-    A  = (Q - Q.conj().transpose(-1, -2)) * 0.5       # anti-Hermitian part
-    tr = torch.einsum("...ii->...", A) / Nc            # trace per site
-    eye = torch.eye(Nc, dtype=Q.dtype, device=Q.device)
-    return A - tr.unsqueeze(-1).unsqueeze(-1) * eye    # traceless
 
 
 # ---------------------------------------------------------------------------
 # Wilson gauge action
 # ---------------------------------------------------------------------------
+
 
 def wilson_gauge_action(U: torch.Tensor, beta: float) -> torch.Tensor:
     """
@@ -104,12 +95,12 @@ def wilson_gauge_action(U: torch.Tensor, beta: float) -> torch.Tensor:
     -------
     action : real scalar torch.Tensor
     """
-    Nc     = U.shape[-1]
+    Nc = U.shape[-1]
     action = U.new_zeros(1, dtype=U.real.dtype)
 
     for mu in range(4):
         for nu in range(mu + 1, 4):
-            retr   = torch.einsum("...ii->...", _plaquette(U, mu, nu)).real
+            retr = torch.einsum("...ii->...", _plaquette(U, mu, nu)).real
             action = action + (Nc - retr).sum()
 
     return (beta / Nc) * action
@@ -124,14 +115,17 @@ def plaquette_average(U: torch.Tensor) -> torch.Tensor:
 
     Returns a real scalar tensor.
     """
-    Nc      = U.shape[-1]
-    V       = U[0].shape[0] * U[0].shape[1] * U[0].shape[2] * U[0].shape[3]
+    Nc = U.shape[-1]
+    V = U[0].shape[0] * U[0].shape[1] * U[0].shape[2] * U[0].shape[3]
     n_pairs = 6  # C(4,2)
-    total   = U.new_zeros(1, dtype=U.real.dtype)
+    total = U.new_zeros(1, dtype=U.real.dtype)
 
     for mu in range(4):
         for nu in range(mu + 1, 4):
-            total = total + torch.einsum("...ii->...", _plaquette(U, mu, nu)).real.sum()
+            total = (
+                total
+                + torch.einsum("...ii->...", _plaquette(U, mu, nu)).real.sum()
+            )
 
     return total / (n_pairs * V * Nc)
 
@@ -140,17 +134,18 @@ def plaquette_average(U: torch.Tensor) -> torch.Tensor:
 # Gauge force  (molecular-dynamics equations of motion for P)
 # ---------------------------------------------------------------------------
 
+
 def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
     """
     Gauge force that drives the momenta in the MD equations:
 
         dP_mu(x)/dt = F_mu(x)
 
-    Computed as the su(3)-projected product of U_mu with its staple sum:
+    Computed as:
 
-        F_mu(x) = (beta / (2*Nc)) * proj_su3[ U_mu(x) . Sigma_mu(x) ]
+        F_mu(x) = -beta/12 * 1j * sum_{nu != mu} (U_mu(x) Sigma_mu(x) - Sigma_mu^dag(x) U_mu(x))
 
-    where  Sigma_mu(x) = sum_{nu != mu} (staple_forward + staple_backward).
+    where  Sigma_mu(x) = sum_{nu != mu} (staple_forward).
 
     Parameters
     ----------
@@ -161,8 +156,7 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
     -------
     F : torch.Tensor, same shape as U (traceless anti-Hermitian at each site)
     """
-    Nc = U.shape[-1]
-    F  = torch.zeros_like(U)
+    F = torch.zeros_like(U)
 
     for mu in range(4):
         sigma = torch.zeros_like(U[mu])
@@ -171,8 +165,8 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
                 continue
             sigma = sigma + _staple(U, mu, nu)
 
-        Q    = torch.matmul(U[mu], sigma)
-        F[mu] = (beta / (2 * Nc)) * _project_su3_algebra(Q)
+        Q = torch.matmul(U[mu], sigma)
+        F[mu] = (beta / 12) * (Q - Q.conj().transpose(-1, -2))
 
     return F
 
@@ -181,13 +175,12 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
 # Kinetic energy and Hamiltonian
 # ---------------------------------------------------------------------------
 
+
 def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     """
     Kinetic term of the HMC Hamiltonian:
 
-        T(P) = (1/2) * sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
-
-    For su(3)-valued P = i * sum_a pi_a T^a, this reduces to (1/2) sum pi_a^2.
+        T(P) = sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
 
     Parameters
     ----------
@@ -197,7 +190,7 @@ def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     -------
     T : real scalar tensor
     """
-    return 0.5 * (P.conj() * P).real.sum()
+    return (P.conj() * P).real.sum()
 
 
 def hamiltonian(U: torch.Tensor, P: torch.Tensor, beta: float) -> torch.Tensor:
@@ -222,6 +215,7 @@ def hamiltonian(U: torch.Tensor, P: torch.Tensor, beta: float) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 # SU(3) reunitarisation
 # ---------------------------------------------------------------------------
+
 
 def reunitarize(U: torch.Tensor) -> torch.Tensor:
     """
@@ -250,15 +244,15 @@ def reunitarize(U: torch.Tensor) -> torch.Tensor:
     """
     # torch.linalg.svd returns (A, S, Bh) where M = A @ diag(S) @ Bh
     A, _S, Bh = torch.linalg.svd(U)
-    U_unitary = torch.matmul(A, Bh)                         # unitary, shape as U
+    U_unitary = torch.matmul(A, Bh)  # unitary, shape as U
 
     # Fix determinant: divide by det^(1/Nc) to land on SU(3)
-    Nc  = U.shape[-1]
-    det = torch.linalg.det(U_unitary)                       # [...] complex scalar
+    Nc = U.shape[-1]
+    det = torch.linalg.det(U_unitary)  # [...] complex scalar
     # (1/Nc)-th power of the determinant (keep phase only, |det|=1 already)
-    phase = det / det.abs()                                  # det / |det|
+    phase = det / det.abs()  # det / |det|
     phase_root = torch.exp(
-        torch.log(phase + 1e-30j) / Nc                      # (1/Nc) * log(phase)
+        torch.log(phase + 1e-30j) / Nc  # (1/Nc) * log(phase)
     )
     U_proj = U_unitary / phase_root.unsqueeze(-1).unsqueeze(-1)
 

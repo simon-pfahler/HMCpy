@@ -19,21 +19,34 @@ One HMC trajectory:
 Conventions match HMCpy / qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
 
-import torch
-from .physics import hamiltonian
-from .integrator import leapfrog, omf2
+from typing import Callable
 
+import torch
+from qcd_ml.qcd.dirac import dirac_wilson_clover
+from qcd_ml.util.solver import GMRES
+
+from .fermion import gell_mann_matrices
+from .integrator import leapfrog
+from .physics import (
+    gauge_force,
+    hamiltonian,
+    kinetic_energy,
+    wilson_gauge_action,
+)
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
 # ---------------------------------------------------------------------------
 
+
 def sample_momenta(U: torch.Tensor) -> torch.Tensor:
     """
-    Sample conjugate momenta P ~ exp(-T(P)), T = (1/2) Tr[P^dag P].
+    Sample conjugate momenta P ~ exp(-tr(P^2)).
 
-    Each P_mu(x) is a traceless anti-Hermitian Nc x Nc matrix drawn from
-    the Gaussian measure on su(Nc).
+    Each P_mu(x) is a traceless anti-Hermitian 3x3 matrix drawn via
+        P_mu(x) = sum_i p_mu^(i)(x) T_i
+    where p_mu^(i)(x) are random normal distributed real numbers and T_i are
+    the Gell-Mann matrices.
 
     Parameters
     ----------
@@ -44,27 +57,20 @@ def sample_momenta(U: torch.Tensor) -> torch.Tensor:
     -------
     P : torch.Tensor, same shape as U -- traceless anti-Hermitian
     """
-    shape = U.shape
-    Nc    = shape[-1]
-    std   = 1.0 / (2.0 ** 0.5)
+    lattice_sizes = U.shape[1:5]
 
-    X  = std * (torch.randn(shape, dtype=U.real.dtype, device=U.device)
-                + 1j * torch.randn(shape, dtype=U.real.dtype, device=U.device))
-    X  = X.to(U.dtype)
+    ps = torch.randn(4, *lattice_sizes, 8, dtype=torch.double).to(torch.cdouble)
 
-    A  = (X - X.conj().transpose(-1, -2)) * 0.5          # anti-Hermitian
-    tr = torch.einsum("...ii->...", A) / Nc               # trace / Nc
-    eye = torch.eye(Nc, dtype=U.dtype, device=U.device)
-    return A - tr.unsqueeze(-1).unsqueeze(-1) * eye        # traceless
+    return torch.einsum("...i,ikl->...kl", ps, gell_mann_matrices).to(U.device)
 
 
 # ---------------------------------------------------------------------------
 # Metropolis accept/reject step
 # ---------------------------------------------------------------------------
 
+
 def metropolis_accept(
     delta_H: torch.Tensor,
-    rng: torch.Generator | None = None,
 ) -> bool:
     """
     Metropolis criterion:  accept with probability min(1, exp(-delta_H)).
@@ -72,7 +78,6 @@ def metropolis_accept(
     Parameters
     ----------
     delta_H : real scalar tensor,  H_new - H_old
-    rng     : optional torch.Generator for reproducibility
 
     Returns
     -------
@@ -81,13 +86,14 @@ def metropolis_accept(
     if delta_H.item() <= 0.0:
         return True
     prob = torch.exp(-delta_H.cpu()).item()
-    u    = torch.rand(1, generator=rng).item() if rng is not None else torch.rand(1).item()
-    return u < prob
+    r = torch.rand(1).item()
+    return r < prob
 
 
 # ---------------------------------------------------------------------------
 # Full HMC update  (pure gauge or dynamical fermions)
 # ---------------------------------------------------------------------------
+
 
 def hmc_step(
     U: torch.Tensor,
@@ -95,38 +101,35 @@ def hmc_step(
     n_steps: int,
     step_size: float,
     integrator: str = "leapfrog",
-    rng: torch.Generator | None = None,
-    # --- dynamical fermion options ---
-    dirac_op=None,
-    use_analytic_force: bool = True,
-    cg_max_iter: int = 1000,
-    cg_tol: float = 1e-12,
+    dynamic: bool = False,
+    mass_parameter: float | None = None,
+    csw: float = 1,
+    GMRES_kwargs: dict | None = None,
 ) -> tuple[torch.Tensor, bool, float]:
     """
     One complete HMC update.
 
     Pure-gauge mode (default)
     -------------------------
-    Omit `dirac_op` (or pass None).
+    Omit `dynamic` or pass `False`.
 
-    Dynamical-fermion mode (Nf=2 Wilson)
+    Dynamical-fermion mode (2 degenerate fermion flavors)
     -------------------------------------
-    Pass a `dirac_op` (DiracOperator instance, e.g. Qcd_ml_DiracWilson).
+    Pass `dynamic=True`.
     A pseudofermion field is sampled automatically.
 
     Parameters
     ----------
     U                  : current gauge field [4, Lx, Ly, Lz, Lt, Nc, Nc]
     beta               : inverse bare coupling
-    n_steps            : number of MD steps per trajectory
-    step_size          : MD step size epsilon
+    n_steps            : number of steps in integration of molecular dynamics
+    step_size          : molecular dynamics step size epsilon
     integrator         : "leapfrog" (default) or "omf2"
-    rng                : optional torch.Generator
-    dirac_op           : DiracOperator instance (None = pure gauge)
-    use_analytic_force : use analytic (True) or finite-difference (False)
-                         fermion force.  Ignored in pure-gauge mode.
-    cg_max_iter        : max CG iterations for fermion force / action
-    cg_tol             : CG relative residual tolerance
+    dynamic            : Toggle whether to use dynamic fermions
+    mass_parameter     : Mass parameter for Dirac operator
+    csw                : csw factor for clover-term in Wilson-clover Dirac
+                         operator
+    GMRES_kwargs       : Keyword arguments for GMRES
 
     Returns
     -------
@@ -134,58 +137,56 @@ def hmc_step(
     accepted : bool
     delta_H  : float -- energy violation (use for step-size tuning)
     """
-    from .physics import kinetic_energy, wilson_gauge_action
+
+    # ---- Helpers ----
+    lattice_sizes = U.shape[1:5]
 
     # ---- Momentum refresh ----
     P = sample_momenta(U)
 
     # ---- Pseudofermion sampling (if dynamical fermions) ----
-    phi      = None
-    S_pf_old = U.new_zeros(1)
+    phi = None
+    S_pf_old = 0
+    if dynamic:
+        chi = torch.randn(
+            *lattice_sizes, 4, 3, dtype=torch.cdouble, device=U.device
+        )
 
-    if dirac_op is not None:
-        from .fermion import sample_pseudofermion, pseudofermion_action
-        phi      = sample_pseudofermion(U, dirac_op)
-        S_pf_old = pseudofermion_action(phi, U, dirac_op,
-                                         cg_max_iter=cg_max_iter, cg_tol=cg_tol)
+        D_old = dirac_wilson_clover(U, mass_parameter, csw)
+        phi = D_old(chi)
+
+        S_pf_old = torch.einsum(chi.conj(), chi).real.sum()
 
     # ---- Initial Hamiltonian ----
-    H_old = (kinetic_energy(P)
-             + wilson_gauge_action(U, beta)
-             + S_pf_old)
+    H_old = kinetic_energy(P) + wilson_gauge_action(U, beta) + S_pf_old
 
     # ---- MD trajectory ----
+    force = lambda U: gauge_force(U, beta)
     integrator_kwargs = dict(
-        beta=beta,
         n_steps=n_steps,
+        force=force,
         step_size=step_size,
-        phi=phi,
-        dirac_op=dirac_op,
-        use_analytic_force=use_analytic_force,
-        cg_max_iter=cg_max_iter,
-        cg_tol=cg_tol,
     )
     if integrator == "leapfrog":
-        U_prop, P_prop = leapfrog(U, P, **integrator_kwargs)
-    elif integrator == "omf2":
-        U_prop, P_prop = omf2(U, P, **integrator_kwargs)
+        U_new, P_new = leapfrog(U, P, **integrator_kwargs)
     else:
-        raise ValueError(f"Unknown integrator '{integrator}'. Choose 'leapfrog' or 'omf2'.")
+        raise ValueError(
+            f"Unknown integrator '{integrator}'. Choose 'leapfrog'."
+        )
 
     # ---- Proposed Hamiltonian ----
-    S_pf_new = U.new_zeros(1)
-    if dirac_op is not None:
-        S_pf_new = pseudofermion_action(phi, U_prop, dirac_op,
-                                         cg_max_iter=cg_max_iter, cg_tol=cg_tol)
+    S_pf_new = 0
+    if dynamic:
+        D_new = dirac_wilson_clover(U_new, mass_parameter, csw)
+        varphi = GMRES(D_new, phi, phi, **GMRES_kwargs)
+        S_pf_new = (varphi.conj() * varphi).real.sum()
 
-    H_new = (kinetic_energy(P_prop)
-             + wilson_gauge_action(U_prop, beta)
-             + S_pf_new)
+    H_new = kinetic_energy(P_new) + wilson_gauge_action(U_new, beta) + S_pf_new
 
     dH = H_new - H_old
 
     # ---- Accept / reject ----
-    accepted = metropolis_accept(dH, rng=rng)
-    U_out    = U_prop if accepted else U
+    accepted = metropolis_accept(dH)
+    U_out = U_new if accepted else U
 
     return U_out, accepted, dH.item()

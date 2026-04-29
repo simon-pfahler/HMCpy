@@ -11,24 +11,17 @@ integrator  : Leapfrog and OMF2 symplectic integrators (pure gauge + dynamical)
 monte_carlo : Momentum sampling and Metropolis accept/reject (pure gauge + dynamical)
 """
 
+from .fermion import fermion_force_wilson_analytic, pseudofermion_action
+from .integrator import leapfrog
+from .monte_carlo import hmc_step, metropolis_accept, sample_momenta
 from .physics import (
-    wilson_gauge_action,
-    plaquette_average,
     gauge_force,
-    kinetic_energy,
     hamiltonian,
+    kinetic_energy,
+    plaquette_average,
     reunitarize,
+    wilson_gauge_action,
 )
-from .fermion import (
-    DiracOperator,
-    Qcd_ml_DiracWilson,
-    sample_pseudofermion,
-    pseudofermion_action,
-    fermion_force,
-    fermion_force_wilson_analytic,
-)
-from .integrator import leapfrog, omf2
-from .monte_carlo import sample_momenta, metropolis_accept, hmc_step
 
 __all__ = [
     # physics
@@ -39,15 +32,10 @@ __all__ = [
     "hamiltonian",
     "reunitarize",
     # fermion
-    "DiracOperator",
-    "Qcd_ml_DiracWilson",
-    "sample_pseudofermion",
     "pseudofermion_action",
-    "fermion_force",
     "fermion_force_wilson_analytic",
     # integrator
     "leapfrog",
-    "omf2",
     # monte_carlo
     "sample_momenta",
     "metropolis_accept",
