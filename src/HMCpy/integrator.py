@@ -19,7 +19,7 @@ from typing import Callable
 
 import torch
 
-from .physics import gauge_force
+from .physics import gauge_force, reunitarize
 
 # ---------------------------------------------------------------------------
 # Type alias for a total force function
@@ -99,7 +99,7 @@ def _exp_update_U(U: torch.Tensor, P: torch.Tensor, eps: float) -> torch.Tensor:
 
     P is su(3)-valued so exp(eps*P) is SU(3).
     """
-    return torch.matmul(torch.linalg.matrix_exp(eps * P), U)
+    return torch.matmul(torch.linalg.matrix_exp(1j * eps * P), U)
 
 
 # ---------------------------------------------------------------------------
@@ -117,14 +117,6 @@ def leapfrog(
     """
     Leapfrog integrator for HMC molecular dynamics.
 
-    Algorithm:
-        P_{1/2}   = P_0 + (eps/2) * F(U_0)
-        for k = 1 .. n_steps-1:
-            U_k   = exp(eps * P_{k-1/2}) . U_{k-1}
-            P_{k+1/2} = P_{k-1/2} + eps * F(U_k)
-        U_n   = exp(eps * P_{n-1/2}) . U_{n-1}
-        P_n   = P_{n-1/2} + (eps/2) * F(U_n)
-
     Parameters
     ----------
     U, P       : initial phase-space point
@@ -139,11 +131,15 @@ def leapfrog(
     U_new, P_new
     """
 
-    P = P + (step_size / 2) * force(U)
+    P = P - (step_size / 2) * force(U)
     for _ in range(n_steps - 1):
         U = _exp_update_U(U, P, step_size)
-        P = P + step_size * force(U)
+        P = P - step_size * force(U)
+        if _ % 10 == 0:
+            U = reunitarize(U)
     U = _exp_update_U(U, P, step_size)
-    P = P + (step_size / 2) * force(U)
+    P = P - (step_size / 2) * force(U)
+
+    U = reunitarize(U)
 
     return U, P

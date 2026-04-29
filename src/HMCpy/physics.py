@@ -84,40 +84,37 @@ def wilson_gauge_action(U: torch.Tensor, beta: float) -> torch.Tensor:
     """
     Wilson gauge action:
 
-        S_W[U] = (beta / Nc) * sum_{x, mu < nu} Re Tr[ 1 - U_{mu,nu}(x) ]
+        S_W[U] = (beta / 3) * sum_{x, mu < nu} Re Tr[ 1 - U_{mu,nu}(x) ]
 
     Parameters
     ----------
-    U    : torch.Tensor, shape [4, Lx, Ly, Lz, Lt, Nc, Nc]
-    beta : float -- bare inverse coupling (beta = 2*Nc / g^2)
+    U    : torch.Tensor, shape [4, Lx, Ly, Lz, Lt, 3, 3]
+    beta : float -- bare inverse coupling (beta = 6 / g^2)
 
     Returns
     -------
     action : real scalar torch.Tensor
     """
-    Nc = U.shape[-1]
     action = U.new_zeros(1, dtype=U.real.dtype)
 
     for mu in range(4):
         for nu in range(mu + 1, 4):
             retr = torch.einsum("...ii->...", _plaquette(U, mu, nu)).real
-            action = action + (Nc - retr).sum()
+            action = action + (3 - retr).sum()
 
-    return (beta / Nc) * action
+    return (beta / 3) * action
 
 
 def plaquette_average(U: torch.Tensor) -> torch.Tensor:
     """
-    Mean plaquette  <P> = (1 / (6 * V * Nc)) * sum_{x,mu<nu} Re Tr U_{mu,nu}(x).
+    Mean plaquette  <P> = (1 / (6 * V * 3)) * sum_{x,mu<nu} Re Tr U_{mu,nu}(x).
 
     Useful diagnostic: for a thermalised SU(3) configuration at beta~6 it
     should be around 0.5.
 
     Returns a real scalar tensor.
     """
-    Nc = U.shape[-1]
     V = U[0].shape[0] * U[0].shape[1] * U[0].shape[2] * U[0].shape[3]
-    n_pairs = 6  # C(4,2)
     total = U.new_zeros(1, dtype=U.real.dtype)
 
     for mu in range(4):
@@ -127,7 +124,7 @@ def plaquette_average(U: torch.Tensor) -> torch.Tensor:
                 + torch.einsum("...ii->...", _plaquette(U, mu, nu)).real.sum()
             )
 
-    return total / (n_pairs * V * Nc)
+    return total / (6 * V * 3)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +177,7 @@ def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     """
     Kinetic term of the HMC Hamiltonian:
 
-        T(P) = sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
+        T(P) = 1/2 * sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
 
     Parameters
     ----------
@@ -190,7 +187,7 @@ def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     -------
     T : real scalar tensor
     """
-    return (P.conj() * P).real.sum()
+    return 1 / 2 * (P.conj() * P).real.sum()
 
 
 def hamiltonian(U: torch.Tensor, P: torch.Tensor, beta: float) -> torch.Tensor:
