@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "HMCpy"
+version = "0.1.0"
+description = "HMC for lattice QCD in python"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Simon Pfahler", email = "simon@pfahler.online"}
+]
+
+[project.urls]
+Homepage = "https://github.com/simon-pfahler/HMCpy"

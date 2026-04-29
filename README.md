@@ -1,0 +1,3 @@
+# HMCpy - HMC for lattice QCD in python
+
+Work in progress...
