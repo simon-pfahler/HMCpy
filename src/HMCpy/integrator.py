@@ -131,12 +131,12 @@ def leapfrog(
     U_new, P_new
     """
 
-    P = P + (step_size / 2) * force(U)
+    P = P - (step_size / 2) * force(U)
     for _ in range(n_steps - 1):
         U = _exp_update_U(U, P, step_size)
-        P = P + step_size * force(U)
+        P = P - step_size * force(U)
     U = _exp_update_U(U, P, step_size)
-    P = P + (step_size / 2) * force(U)
+    P = P - (step_size / 2) * force(U)
 
     return U, P
 
@@ -176,8 +176,25 @@ def omf4(
     vartheta = 0.08398315262876693
     lam = 0.6822365335719091
 
-    P = P + vartheta * step_size * force(U)
+    P = P + rho * step_size * force(U)
     for _ in range(n_steps - 1):
         U = _exp_update_U(U, P, lam * step_size)
+        P = P + theta * step_size * force(U)
+        U = _exp_update_U(U, P, (0.5 - lam) * step_size)
+        P = P + (1.0 - 2.0 * (theta + rho)) * step_size * force(U)
+        U = _exp_update_U(U, P, (0.5 - lam) * step_size)
+        P = P + theta * step_size * force(U)
+        U = _exp_update_U(U, P, lam * step_size)
+        P = P + 2.0 * rho * step_size * force(U)  # merged boundary kick
+
+    # Final step — close symmetrically without merging
+    U = _exp_update_U(U, P, lam * step_size)
+    P = P + theta * step_size * force(U)
+    U = _exp_update_U(U, P, (0.5 - lam) * step_size)
+    P = P + (1.0 - 2.0 * (theta + rho)) * step_size * force(U)
+    U = _exp_update_U(U, P, (0.5 - lam) * step_size)
+    P = P + theta * step_size * force(U)
+    U = _exp_update_U(U, P, lam * step_size)
+    P = P + rho * step_size * force(U)
 
     return U, P

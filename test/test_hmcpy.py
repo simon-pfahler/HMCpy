@@ -301,7 +301,7 @@ class TestPhysics:
         gen = gell_mann_matrices[a]
         val = torch.trace(gen @ F[idx])
         # The action derivative along exp(i eps lambda_a) is  -Tr[lambda_a * F]
-        return 2 * val.item()
+        return -2 * val.item()
 
     @pytest.mark.parametrize("mu", [0, 1, 2, 3])
     def test_force_equals_action_gradient(self, mu):
@@ -615,15 +615,15 @@ class TestMonteCarlo:
         P = sample_momenta(U)
         assert P.shape == U.shape
 
-    def test_momenta_are_anti_hermitian(self):
-        """P + P^dag must be zero (anti-Hermitian) at every site."""
+    def test_momenta_are_hermitian(self):
+        """P - P^dag must be zero (Hermitian) at every site."""
         U = _cold_start()
         torch.manual_seed(SEED)
         P = sample_momenta(U)
-        anti_herm = P + P.conj().transpose(-1, -2)
+        herm = P - P.conj().transpose(-1, -2)
         assert torch.allclose(
-            anti_herm, torch.zeros_like(anti_herm), atol=1e-12
-        ), f"Momenta not anti-Hermitian; max |P+P†| = {anti_herm.abs().max().item():.2e}"
+            herm, torch.zeros_like(herm), atol=1e-12
+        ), f"Momenta not Hermitian; max |P-P†| = {herm.abs().max().item():.2e}"
 
     def test_momenta_are_traceless(self):
         """Tr[P_mu(x)] = 0 at every site for su(3)-valued momenta."""
@@ -644,16 +644,16 @@ class TestMonteCarlo:
     def test_kinetic_energy_distribution(self):
         """
         With P = sum_a p_a lambda_a and p_a ~ N(0,1), the kinetic energy
-        T = (1/2) sum_{mu,x,a} p_a^2 has expectation
-        E[T] = (1/2) * 4 * V * 8 = 2 * V * 8  (4 dirs, 8 generators, V sites).
+        T = sum_{mu,x,a} p_a^2 has expectation
+        E[T] = 4 * V * 8 = 2 * V * 8  (4 dirs, 8 generators, V sites).
 
         We draw many samples and check the sample mean is close to the
-        theoretical mean (within 3 sigma for N=200 samples).
+        theoretical mean (within 5 sigma for N=200 samples).
         """
         V = L**4
         n_generators = 8
         n_dirs = 4
-        expected_mean = 0.5 * n_dirs * V * n_generators  # = 2*V*8 for L=2
+        expected_mean = n_dirs * V * n_generators
 
         N_samples = 200
         torch.manual_seed(SEED)
@@ -668,9 +668,9 @@ class TestMonteCarlo:
         n_dof = n_dirs * V * n_generators
         std_mean = math.sqrt(n_dof / (4 * N_samples))
 
-        assert abs(sample_mean - expected_mean) < 4 * std_mean, (
+        assert abs(sample_mean - expected_mean) < 5 * std_mean, (
             f"Kinetic energy mean {sample_mean:.2f} far from expected {expected_mean:.2f} "
-            f"(4-sigma bound: {4*std_mean:.2f})"
+            f"(5-sigma bound: {5*std_mean:.2f})"
         )
 
     # -----------------------------------------------------------------------

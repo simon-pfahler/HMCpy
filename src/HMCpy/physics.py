@@ -122,8 +122,6 @@ def plaquette_average(U: torch.Tensor) -> torch.Tensor:
             contrib = torch.einsum(
                 "...ii->...", _plaquette(U, mu, nu)
             ).real.sum()
-            if contrib < 0.0:
-                print(mu, nu, contrib)
             total += contrib
 
     return total / (6 * V * 3)
@@ -173,7 +171,7 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
         ) * eye
         F[mu] = A
 
-    return -(beta / 12) * 1j * F
+    return (beta / 12) * 1j * F
 
 
 # ---------------------------------------------------------------------------

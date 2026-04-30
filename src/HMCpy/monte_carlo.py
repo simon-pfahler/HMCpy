@@ -27,12 +27,7 @@ from qcd_ml.util.solver import GMRES
 
 from .fermion import gell_mann_matrices
 from .integrator import leapfrog
-from .physics import (
-    gauge_force,
-    hamiltonian,
-    kinetic_energy,
-    wilson_gauge_action,
-)
+from .physics import gauge_force, kinetic_energy, wilson_gauge_action
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
@@ -43,7 +38,7 @@ def sample_momenta(U: torch.Tensor) -> torch.Tensor:
     """
     Sample conjugate momenta P ~ exp(-tr(P^2)).
 
-    Each P_mu(x) is a traceless anti-Hermitian 3x3 matrix drawn via
+    Each P_mu(x) is a traceless Hermitian 3x3 matrix drawn via
         P_mu(x) = sum_i p_mu^(i)(x) T_i
     where p_mu^(i)(x) are random normal distributed real numbers and T_i are
     the Gell-Mann matrices.
