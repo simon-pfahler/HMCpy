@@ -100,7 +100,7 @@ def wilson_gauge_action(U: torch.Tensor, beta: float) -> torch.Tensor:
     for mu in range(4):
         for nu in range(mu + 1, 4):
             retr = torch.einsum("...ii->...", _plaquette(U, mu, nu)).real
-            action = action + (3 - retr).sum()
+            action += (3 - retr).sum()
 
     return (beta / 3) * action
 
@@ -119,10 +119,12 @@ def plaquette_average(U: torch.Tensor) -> torch.Tensor:
 
     for mu in range(4):
         for nu in range(mu + 1, 4):
-            total = (
-                total
-                + torch.einsum("...ii->...", _plaquette(U, mu, nu)).real.sum()
-            )
+            contrib = torch.einsum(
+                "...ii->...", _plaquette(U, mu, nu)
+            ).real.sum()
+            if contrib < 0.0:
+                print(mu, nu, contrib)
+            total += contrib
 
     return total / (6 * V * 3)
 
@@ -151,21 +153,27 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
 
     Returns
     -------
-    F : torch.Tensor, same shape as U (traceless anti-Hermitian at each site)
+    F : torch.Tensor, same shape as U (traceless Hermitian at each site)
     """
     F = torch.zeros_like(U)
+    eye = torch.eye(3, dtype=F.dtype, device=F.device)
 
     for mu in range(4):
         sigma = torch.zeros_like(U[mu])
         for nu in range(4):
             if nu == mu:
                 continue
-            sigma = sigma + _staple(U, mu, nu)
+            sigma += _staple(U, mu, nu)
 
         Q = torch.matmul(U[mu], sigma)
-        F[mu] = (beta / 12) * (Q - Q.conj().transpose(-1, -2))
 
-    return F
+        A = Q - Q.adjoint()
+        A -= (torch.einsum("...ii->...", A) / 3).unsqueeze(-1).unsqueeze(
+            -1
+        ) * eye
+        F[mu] = A
+
+    return -(beta / 12) * 1j * F
 
 
 # ---------------------------------------------------------------------------

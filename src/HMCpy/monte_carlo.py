@@ -159,9 +159,11 @@ def hmc_step(
 
     # ---- Initial Hamiltonian ----
     H_old = kinetic_energy(P) + wilson_gauge_action(U, beta) + S_pf_old
+    """
     print(
         f"H_old: {kinetic_energy(P)} + {wilson_gauge_action(U, beta).item()} {torch.einsum('...ij,...ji->', U.adjoint(), U).item()}"
     )
+    """
 
     # ---- MD trajectory ----
     force = lambda U: gauge_force(U, beta)
@@ -185,9 +187,11 @@ def hmc_step(
         S_pf_new = (varphi.conj() * varphi).real.sum()
 
     H_new = kinetic_energy(P_new) + wilson_gauge_action(U_new, beta) + S_pf_new
+    """
     print(
         f"H_new: {kinetic_energy(P_new)} + {wilson_gauge_action(U_new, beta).item()} {torch.einsum('...ij,...ji->', U_new.adjoint(), U_new).item()}"
     )
+    """
 
     dH = H_new - H_old
 

@@ -131,15 +131,53 @@ def leapfrog(
     U_new, P_new
     """
 
-    P = P - (step_size / 2) * force(U)
+    P = P + (step_size / 2) * force(U)
     for _ in range(n_steps - 1):
         U = _exp_update_U(U, P, step_size)
-        P = P - step_size * force(U)
-        if _ % 10 == 0:
-            U = reunitarize(U)
+        P = P + step_size * force(U)
     U = _exp_update_U(U, P, step_size)
-    P = P - (step_size / 2) * force(U)
+    P = P + (step_size / 2) * force(U)
 
-    U = reunitarize(U)
+    return U, P
+
+
+# ---------------------------------------------------------------------------
+# OMF4 (Omelyan, Mryglod, Folk) integrator
+# ---------------------------------------------------------------------------
+
+
+def omf4(
+    U: torch.Tensor,
+    P: torch.Tensor,
+    n_steps: int,
+    force: Callable[[torch.Tensor], torch.Tensor],
+    step_size: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    OMF4 integrator for HMC molecular dynamics.
+
+    Parameters
+    ----------
+    U, P       : initial phase-space point
+    beta       : inverse coupling
+    n_steps    : number of leapfrog steps
+    force      : Function to obtain the force for a given field U
+    step_size  : MD step size epsilon
+    phi        : pseudofermion field (None = pure gauge)
+
+    Returns
+    -------
+    U_new, P_new
+    """
+
+    # Optimal 4th-order OMF coefficients (from https://doi.org/10.1016/S0010-4655(02)00754-3)
+    rho = 0.2539785108410595
+    theta = -0.03230286765269967
+    vartheta = 0.08398315262876693
+    lam = 0.6822365335719091
+
+    P = P + vartheta * step_size * force(U)
+    for _ in range(n_steps - 1):
+        U = _exp_update_U(U, P, lam * step_size)
 
     return U, P
