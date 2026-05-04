@@ -27,7 +27,12 @@ from qcd_ml.util.solver import GMRES
 
 from .fermion import gell_mann_matrices
 from .integrator import leapfrog
-from .physics import gauge_force, kinetic_energy, wilson_gauge_action
+from .physics import (
+    gauge_force,
+    hamiltonian,
+    kinetic_energy,
+    wilson_gauge_action,
+)
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
@@ -50,13 +55,15 @@ def sample_momenta(U: torch.Tensor) -> torch.Tensor:
 
     Returns
     -------
-    P : torch.Tensor, same shape as U -- traceless anti-Hermitian
+    P : torch.Tensor, same shape as U -- traceless Hermitian
     """
     lattice_sizes = U.shape[1:5]
 
     ps = torch.randn(4, *lattice_sizes, 8, dtype=torch.double).to(torch.cdouble)
 
-    return torch.einsum("...i,ikl->...kl", ps, gell_mann_matrices).to(U.device)
+    return torch.einsum("...i,ikl->...kl", ps, 0.5 * gell_mann_matrices).to(
+        U.device
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +160,7 @@ def hmc_step(
         S_pf_old = torch.einsum(chi.conj(), chi).real.sum()
 
     # ---- Initial Hamiltonian ----
-    H_old = kinetic_energy(P) + wilson_gauge_action(U, beta) + S_pf_old
+    H_old = hamiltonian(U, P, beta) + S_pf_old
     """
     print(
         f"H_old: {kinetic_energy(P)} + {wilson_gauge_action(U, beta).item()} {torch.einsum('...ij,...ji->', U.adjoint(), U).item()}"

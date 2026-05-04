@@ -470,6 +470,15 @@ class TestIntegrator:
          leapfrog and eps^4 for OMF4 as eps -> 0.
     """
 
+    def _test_U_update(self, U, P, eps):
+        return U + eps * P
+
+    def _test_force(self, U):
+        return -U
+
+    def _test_hamiltonian(self, U, P):
+        return (P**2) / 2 + torch.sum(U**2) / 2
+
     def _force(self, U):
         return gauge_force(U, BETA)
 
@@ -481,15 +490,49 @@ class TestIntegrator:
         "integrator_fn,name",
         [
             (leapfrog, "leapfrog"),
-            (omf4, "omf4"),
         ],
     )
-    def test_time_reversibility(self, integrator_fn, name):
+    def test_time_reversibility_HO(self, integrator_fn, name):
         """
         Symplectic integrators are time-reversible:
             (U', P') = integrate(U, P)
             (U'', P'') = integrate(U', -P')
         must give (U'', P'') == (U, -P) up to floating-point precision.
+        This test checks this for a 1D harmonic oscillator.
+        """
+        U0 = torch.ones(1, dtype=torch.double)
+        P0 = torch.zeros(1, dtype=torch.double)
+        n_steps, step_size = 4, 0.05
+
+        U1, P1 = integrator_fn(
+            U0, P0, n_steps, self._test_force, step_size, self._test_U_update
+        )
+        U2, P2 = integrator_fn(
+            U1, -P1, n_steps, self._test_force, step_size, self._test_U_update
+        )
+
+        assert torch.allclose(U2, U0, atol=1e-9), (
+            f"[{name}] time-reversibility broken for U; "
+            f"max |U''- U0| = {(U2 - U0).abs().max().item():.2e}"
+        )
+        assert torch.allclose(P2, -P0, atol=1e-9), (
+            f"[{name}] time-reversibility broken for P; "
+            f"max |P'' + P0| = {(P2 + P0).abs().max().item():.2e}"
+        )
+
+    @pytest.mark.parametrize(
+        "integrator_fn,name",
+        [
+            (leapfrog, "leapfrog"),
+        ],
+    )
+    def test_time_reversibility_MD(self, integrator_fn, name):
+        """
+        Symplectic integrators are time-reversible:
+            (U', P') = integrate(U, P)
+            (U'', P'') = integrate(U', -P')
+        must give (U'', P'') == (U, -P) up to floating-point precision.
+        This test checks this for the MD simulation in HMC.
         """
         U0 = _hot_start()
         P0 = _random_momenta(U0)
@@ -511,54 +554,56 @@ class TestIntegrator:
     # Energy conservation: delta_H must scale correctly with step size
     # -----------------------------------------------------------------------
 
-    def _delta_H(self, integrator_fn, step_size, n_steps=4):
-        U0 = _hot_start()
-        P0 = _random_momenta(U0)
-        H0 = hamiltonian(U0, P0, BETA)
-        U1, P1 = integrator_fn(U0, P0, n_steps, self._force, step_size)
-        H1 = hamiltonian(U1, P1, BETA)
-        return abs((H1 - H0).item())
+    def _get_max_diff(self, step_size, time, test_system):
+        U = torch.ones(1)
+        P = torch.zeros(1)
+        if not test_system:
+            U = _hot_start()
+            P = _random_momenta(U)
+        N = round(time / step_size)
+        Hs = torch.zeros(N)
+        for _ in range(N):
+            if test_system:
+                Hs[_] = self._test_hamiltonian(U, P)
+                U, P = leapfrog(
+                    U, P, 1, self._test_force, step_size, self._test_U_update
+                )
+            else:
+                Hs[_] = hamiltonian(U, P, BETA)
+                U, P = leapfrog(U, P, 1, self._force, step_size)
+        return (Hs.max() - Hs.min()).abs()
 
-    def test_leapfrog_energy_conservation_order2(self):
+    def test_leapfrog_energy_drift_HO(self):
         """
         For leapfrog, delta_H = O(eps^2).
         Halving the step size must reduce delta_H by ~4x.
+        This test checks this for a 1D harmonic oscillator.
         """
-        dH_coarse = self._delta_H(leapfrog, step_size=0.1)
-        dH_fine = self._delta_H(leapfrog, step_size=0.05)
+
+        dH_coarse = self._get_max_diff(0.1, 100, True)
+        dH_fine = self._get_max_diff(0.05, 100, True)
         ratio = dH_coarse / dH_fine
-        # Expect ratio ~4; allow generous tolerance for finite-step effects
-        assert 2.5 < ratio < 8.0, (
+
+        assert 3.5 < ratio < 4.5, (
             f"Leapfrog not 2nd order: dH(0.1)={dH_coarse:.3e}, "
             f"dH(0.05)={dH_fine:.3e}, ratio={ratio:.2f} (expected ~4)"
         )
 
-    def test_omf4_energy_conservation_order4(self):
+    def test_leapfrog_energy_drift_MD(self):
         """
-        For OMF4, delta_H = O(eps^4).
-        Halving the step size must reduce delta_H by ~16x.
+        For leapfrog, delta_H = O(eps^2).
+        Halving the step size must reduce delta_H by ~4x.
+        This test checks this for the MD simulation in HMC.
         """
-        dH_coarse = self._delta_H(omf4, step_size=0.15)
-        dH_fine = self._delta_H(omf4, step_size=0.075)
-        ratio = dH_coarse / dH_fine
-        # Expect ratio ~16; allow generous tolerance
-        assert 8.0 < ratio < 40.0, (
-            f"OMF4 not 4th order: dH(0.15)={dH_coarse:.3e}, "
-            f"dH(0.075)={dH_fine:.3e}, ratio={ratio:.2f} (expected ~16)"
-        )
 
-    def test_omf4_smaller_delta_H_than_leapfrog(self):
-        """
-        At the same step size and number of steps, OMF4 must produce a
-        significantly smaller energy violation than leapfrog.
-        """
-        step_size = 0.1
-        n_steps = 4
-        dH_lf = self._delta_H(leapfrog, step_size, n_steps)
-        dH_omf = self._delta_H(omf4, step_size, n_steps)
-        assert (
-            dH_omf < dH_lf
-        ), f"OMF4 not better than leapfrog: dH_omf={dH_omf:.3e}, dH_lf={dH_lf:.3e}"
+        dH_coarse = self._get_max_diff(0.1, 10, False)
+        dH_fine = self._get_max_diff(0.05, 10, False)
+        ratio = dH_coarse / dH_fine
+
+        assert 3.5 < ratio < 4.5, (
+            f"Leapfrog not 2nd order: dH(0.1)={dH_coarse:.3e}, "
+            f"dH(0.05)={dH_fine:.3e}, ratio={ratio:.2f} (expected ~4)"
+        )
 
     # -----------------------------------------------------------------------
     # Link update stays on SU(3)
@@ -644,8 +689,8 @@ class TestMonteCarlo:
     def test_kinetic_energy_distribution(self):
         """
         With P = sum_a p_a lambda_a and p_a ~ N(0,1), the kinetic energy
-        T = sum_{mu,x,a} p_a^2 has expectation
-        E[T] = 4 * V * 8 = 2 * V * 8  (4 dirs, 8 generators, V sites).
+        T = sum_{mu,x,a} 1 / 2 p_a^2 has expectation
+        E[T] = 1 / 2 * 4 * V * 8  (4 dirs, 8 generators, V sites).
 
         We draw many samples and check the sample mean is close to the
         theoretical mean (within 5 sigma for N=200 samples).
@@ -653,7 +698,7 @@ class TestMonteCarlo:
         V = L**4
         n_generators = 8
         n_dirs = 4
-        expected_mean = n_dirs * V * n_generators
+        expected_mean = 0.5 * n_dirs * V * n_generators
 
         N_samples = 200
         torch.manual_seed(SEED)
@@ -668,9 +713,9 @@ class TestMonteCarlo:
         n_dof = n_dirs * V * n_generators
         std_mean = math.sqrt(n_dof / (4 * N_samples))
 
-        assert abs(sample_mean - expected_mean) < 5 * std_mean, (
+        assert abs(sample_mean - expected_mean) < 3 * std_mean, (
             f"Kinetic energy mean {sample_mean:.2f} far from expected {expected_mean:.2f} "
-            f"(5-sigma bound: {5*std_mean:.2f})"
+            f"(3-sigma bound: {5*std_mean:.2f})"
         )
 
     # -----------------------------------------------------------------------

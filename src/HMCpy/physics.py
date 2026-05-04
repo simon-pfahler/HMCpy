@@ -7,7 +7,7 @@ Conventions (compatible with qcd_ml):
       Lx,Ly,Lz,Lt : lattice site coordinates
       Nc x Nc      : SU(3) color matrix (Nc=3)
   - Conjugate momenta P have the same shape as U; they are
-    traceless anti-Hermitian matrices (elements of su(3)).
+    traceless Hermitian matrices (elements of su(3)).
   - All tensors are complex torch.Tensor (dtype=torch.complex128).
   - Periodic boundary conditions are used via torch.roll.
 """
@@ -140,7 +140,7 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
 
     Computed as:
 
-        F_mu(x) = -beta/12 * 1j * sum_{nu != mu} (U_mu(x) Sigma_mu(x) - Sigma_mu^dag(x) U_mu(x))
+        F_mu(x) = beta/12 * 1j * sum_{nu != mu} (U_mu(x) Sigma_mu(x) - Sigma_mu^dag(x) U_mu(x))
 
     where  Sigma_mu(x) = sum_{nu != mu} (staple_forward).
 
@@ -183,7 +183,7 @@ def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     """
     Kinetic term of the HMC Hamiltonian:
 
-        T(P) = 1/2 * sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
+        T(P) = sum_{x,mu} Tr[ P_mu(x)^dag P_mu(x) ]
 
     Parameters
     ----------
@@ -193,7 +193,7 @@ def kinetic_energy(P: torch.Tensor) -> torch.Tensor:
     -------
     T : real scalar tensor
     """
-    return 1 / 2 * (P.conj() * P).real.sum()
+    return (P.conj() * P).real.sum()
 
 
 def hamiltonian(U: torch.Tensor, P: torch.Tensor, beta: float) -> torch.Tensor:
@@ -205,7 +205,7 @@ def hamiltonian(U: torch.Tensor, P: torch.Tensor, beta: float) -> torch.Tensor:
     Parameters
     ----------
     U    : gauge field, shape [4, Lx, Ly, Lz, Lt, Nc, Nc]
-    P    : conjugate momenta (traceless anti-Hermitian), same shape as U
+    P    : conjugate momenta (traceless Hermitian), same shape as U
     beta : float
 
     Returns

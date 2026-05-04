@@ -95,9 +95,9 @@ def make_total_force(
 
 def _exp_update_U(U: torch.Tensor, P: torch.Tensor, eps: float) -> torch.Tensor:
     """
-    U_mu(x) <- exp(eps * P_mu(x)) . U_mu(x)
+    U_mu(x) <- exp(i * eps * P_mu(x)) . U_mu(x)
 
-    P is su(3)-valued so exp(eps*P) is SU(3).
+    P is su(3)-valued so exp(i * eps * P) is SU(3).
     """
     return torch.matmul(torch.linalg.matrix_exp(1j * eps * P), U)
 
@@ -113,6 +113,9 @@ def leapfrog(
     n_steps: int,
     force: Callable[[torch.Tensor], torch.Tensor],
     step_size: float,
+    U_update: Callable[
+        [torch.Tensor, torch.Tensor, float], torch.Tensor
+    ] = _exp_update_U,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Leapfrog integrator for HMC molecular dynamics.
@@ -123,6 +126,7 @@ def leapfrog(
     beta       : inverse coupling
     n_steps    : number of leapfrog steps
     force      : Function to obtain the force for a given field U
+    U_update   : Function to update the field U given P
     step_size  : MD step size epsilon
     phi        : pseudofermion field (None = pure gauge)
 
@@ -131,12 +135,12 @@ def leapfrog(
     U_new, P_new
     """
 
-    P = P - (step_size / 2) * force(U)
+    P = P + (step_size / 2) * force(U)
     for _ in range(n_steps - 1):
-        U = _exp_update_U(U, P, step_size)
-        P = P - step_size * force(U)
-    U = _exp_update_U(U, P, step_size)
-    P = P - (step_size / 2) * force(U)
+        U = U_update(U, P, step_size)
+        P = P + step_size * force(U)
+    U = U_update(U, P, step_size)
+    P = P + (step_size / 2) * force(U)
 
     return U, P
 
