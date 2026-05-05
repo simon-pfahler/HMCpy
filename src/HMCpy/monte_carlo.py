@@ -26,7 +26,7 @@ from qcd_ml.qcd.dirac import dirac_wilson_clover
 from qcd_ml.util.solver import GMRES
 
 from .fermion import gell_mann_matrices
-from .integrator import leapfrog
+from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
     hamiltonian,
@@ -176,6 +176,8 @@ def hmc_step(
     )
     if integrator == "leapfrog":
         U_new, P_new = leapfrog(U, P, **integrator_kwargs)
+    elif integrator == "omf4":
+        U_new, P_new = omf4(U, P, **integrator_kwargs)
     else:
         raise ValueError(
             f"Unknown integrator '{integrator}'. Choose 'leapfrog'."

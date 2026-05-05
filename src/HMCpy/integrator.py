@@ -182,23 +182,27 @@ def omf4(
     U_new, P_new : phase-space point after n_steps of OMF4 integration
     """
 
-    # Coefficients from Omelyan et al., p. 292, Variant 8 (Table 2, No. 30)
+    # Coefficients from Omelyan et al., Eq. (71), Variant 8 (non-gradient, order 4)
     rho = 0.2539785108410595
     theta = -0.03230286765269967
     vartheta = 0.08398315262876693
     lam = 0.6822365335719091
 
+    # Pre-compute derived coefficients for position/momentum updates
+    c_pos = (1 - 2 * (lam + vartheta)) / 2
+    c_mom = 1 - 2 * (theta + rho)
+
     for _ in range(n_steps):
-        P = P + force(U) * vartheta * step_size
-        U = U_update(U, P, rho * step_size)
-        P = P + force(U) * lam * step_size
-        U = U_update(U, P, theta * step_size)
-        P = P + force(U) * (1 - 2 * (lam + vartheta)) * step_size / 2
-        U = U_update(U, P, (1 - 2 * (theta + rho)) * step_size)
-        P = P + force(U) * (1 - 2 * (lam + vartheta)) * step_size / 2
-        U = U_update(U, P, theta * step_size)
-        P = P + force(U) * lam * step_size
-        U = U_update(U, P, rho * step_size)
-        P = P + force(U) * vartheta * step_size
+        U = U_update(U, P, vartheta * step_size)
+        P = P + force(U) * rho * step_size
+        U = U_update(U, P, lam * step_size)
+        P = P + force(U) * theta * step_size
+        U = U_update(U, P, c_pos * step_size)
+        P = P + force(U) * c_mom * step_size
+        U = U_update(U, P, c_pos * step_size)
+        P = P + force(U) * theta * step_size
+        U = U_update(U, P, lam * step_size)
+        P = P + force(U) * rho * step_size
+        U = U_update(U, P, vartheta * step_size)
 
     return U, P

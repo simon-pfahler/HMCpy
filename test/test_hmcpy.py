@@ -570,7 +570,7 @@ class TestIntegrator:
                 )
             else:
                 Hs[_] = hamiltonian(U, P, BETA)
-                U, P = leapfrog(U, P, 1, self._force, step_size)
+                U, P = integrator_fn(U, P, 1, self._force, step_size)
         return (Hs.max() - Hs.min()).abs()
 
     @pytest.mark.parametrize(
@@ -599,15 +599,15 @@ class TestIntegrator:
 
         fine_step_size = 1
         if name_integrator in {"leapfrog"}:
-            fine_step_size = 0.05
+            fine_step_size = 0.05 if test_system else 0.01
         if name_integrator in {"omf4"}:
-            fine_step_size = 0.2
+            fine_step_size = 0.4 if test_system else 0.1
         coarse_step_size = 2 * fine_step_size
         dH_coarse = self._get_max_diff(
-            integrator_fn, coarse_step_size, 10, test_system
+            integrator_fn, coarse_step_size, 10 * coarse_step_size, test_system
         )
         dH_fine = self._get_max_diff(
-            integrator_fn, fine_step_size, 10, test_system
+            integrator_fn, fine_step_size, 10 * coarse_step_size, test_system
         )
         ratio = dH_coarse / dH_fine
 
