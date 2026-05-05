@@ -7,12 +7,14 @@ Modules
 -------
 physics     : Wilson action, gauge force, Hamiltonian, SU(3) reunitarisation
 fermion     : Pseudofermion fields, Dirac operator protocol, fermion force
-integrator  : Leapfrog and OMF2 symplectic integrators (pure gauge + dynamical)
+integrator  : Leapfrog and OMF4 symplectic integrators (pure gauge + dynamical)
 monte_carlo : Momentum sampling and Metropolis accept/reject (pure gauge + dynamical)
+utility     : SU(3) generators and exponential update utilities
 """
 
 from .fermion import fermion_force_wilson_analytic, pseudofermion_action
-from .integrator import leapfrog
+from .utility import gell_mann_matrices
+from .integrator import leapfrog, omf4
 from .monte_carlo import hmc_step, metropolis_accept, sample_momenta
 from .physics import (
     gauge_force,
@@ -36,6 +38,9 @@ __all__ = [
     "fermion_force_wilson_analytic",
     # integrator
     "leapfrog",
+    "omf4",
+    # utility
+    "gell_mann_matrices",
     # monte_carlo
     "sample_momenta",
     "metropolis_accept",

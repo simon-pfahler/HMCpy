@@ -25,8 +25,8 @@ import torch
 from qcd_ml.qcd.dirac import dirac_wilson_clover
 from qcd_ml.util.solver import GMRES
 
-from .fermion import gell_mann_matrices
 from .integrator import leapfrog, omf4
+from .utility import gell_mann_matrices
 from .physics import (
     gauge_force,
     hamiltonian,

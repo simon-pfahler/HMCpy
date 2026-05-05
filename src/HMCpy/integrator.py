@@ -20,6 +20,7 @@ from typing import Callable
 import torch
 
 from .physics import gauge_force, reunitarize
+from .utility import _exp_update_U
 
 # ---------------------------------------------------------------------------
 # Type alias for a total force function
@@ -86,20 +87,6 @@ def make_total_force(
         return F
 
     return force_fn
-
-
-# ---------------------------------------------------------------------------
-# SU(3) exponential link update
-# ---------------------------------------------------------------------------
-
-
-def _exp_update_U(U: torch.Tensor, P: torch.Tensor, eps: float) -> torch.Tensor:
-    """
-    U_mu(x) <- exp(i * eps * P_mu(x)) . U_mu(x)
-
-    P is su(3)-valued so exp(i * eps * P) is SU(3).
-    """
-    return torch.matmul(torch.linalg.matrix_exp(1j * eps * P), U)
 
 
 # ---------------------------------------------------------------------------

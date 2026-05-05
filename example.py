@@ -3,7 +3,7 @@ import torch
 
 from HMCpy import hmc_step, plaquette_average, reunitarize
 
-U = torch.eye(3, dtype=torch.cdouble).expand(4, 4, 4, 4, 8, 3, 3)
+U = torch.eye(3, dtype=torch.cdouble).expand(4, 8, 8, 8, 16, 3, 3)
 
 n_traj = 100000
 beta = 6.0
