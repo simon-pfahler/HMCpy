@@ -35,7 +35,6 @@ from HMCpy.integrator import _exp_update_U, leapfrog, omf4
 from HMCpy.monte_carlo import metropolis_accept, sample_momenta
 from HMCpy.physics import (
     _plaquette,
-    _staple,
     gauge_force,
     hamiltonian,
     kinetic_energy,
@@ -524,6 +523,7 @@ class TestIntegrator:
         "integrator_fn,name",
         [
             (leapfrog, "leapfrog"),
+            (omf4, "omf4"),
         ],
     )
     def test_time_reversibility_MD(self, integrator_fn, name):
@@ -536,7 +536,7 @@ class TestIntegrator:
         """
         U0 = _hot_start()
         P0 = _random_momenta(U0)
-        n_steps, step_size = 4, 0.05
+        n_steps, step_size = 10, 1
 
         U1, P1 = integrator_fn(U0, P0, n_steps, self._force, step_size)
         U2, P2 = integrator_fn(U1, -P1, n_steps, self._force, step_size)
@@ -554,7 +554,7 @@ class TestIntegrator:
     # Energy conservation: delta_H must scale correctly with step size
     # -----------------------------------------------------------------------
 
-    def _get_max_diff(self, step_size, time, test_system):
+    def _get_max_diff(self, integrator_fn, step_size, time, test_system):
         U = torch.ones(1)
         P = torch.zeros(1)
         if not test_system:
@@ -565,7 +565,7 @@ class TestIntegrator:
         for _ in range(N):
             if test_system:
                 Hs[_] = self._test_hamiltonian(U, P)
-                U, P = leapfrog(
+                U, P = integrator_fn(
                     U, P, 1, self._test_force, step_size, self._test_U_update
                 )
             else:
@@ -573,36 +573,55 @@ class TestIntegrator:
                 U, P = leapfrog(U, P, 1, self._force, step_size)
         return (Hs.max() - Hs.min()).abs()
 
-    def test_leapfrog_energy_drift_HO(self):
+    @pytest.mark.parametrize(
+        "integrator_fn,name_integrator",
+        [
+            (leapfrog, "leapfrog"),
+            (omf4, "omf4"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "test_system,name_system",
+        [
+            (True, "Harmonic Oscillator"),
+            (False, "Molecular Dynamics"),
+        ],
+    )
+    def test_integrator_energy_drift(
+        self, integrator_fn, name_integrator, test_system, name_system
+    ):
         """
         For leapfrog, delta_H = O(eps^2).
-        Halving the step size must reduce delta_H by ~4x.
+        Halving the step size must reduce delta_H by ~4x for 2nd-order methods
+        and by ~16x for 4th-order methods.
         This test checks this for a 1D harmonic oscillator.
         """
 
-        dH_coarse = self._get_max_diff(0.1, 100, True)
-        dH_fine = self._get_max_diff(0.05, 100, True)
-        ratio = dH_coarse / dH_fine
-
-        assert 3.5 < ratio < 4.5, (
-            f"Leapfrog not 2nd order: dH(0.1)={dH_coarse:.3e}, "
-            f"dH(0.05)={dH_fine:.3e}, ratio={ratio:.2f} (expected ~4)"
+        fine_step_size = 1
+        if name_integrator in {"leapfrog"}:
+            fine_step_size = 0.05
+        if name_integrator in {"omf4"}:
+            fine_step_size = 0.2
+        coarse_step_size = 2 * fine_step_size
+        dH_coarse = self._get_max_diff(
+            integrator_fn, coarse_step_size, 10, test_system
         )
-
-    def test_leapfrog_energy_drift_MD(self):
-        """
-        For leapfrog, delta_H = O(eps^2).
-        Halving the step size must reduce delta_H by ~4x.
-        This test checks this for the MD simulation in HMC.
-        """
-
-        dH_coarse = self._get_max_diff(0.1, 10, False)
-        dH_fine = self._get_max_diff(0.05, 10, False)
+        dH_fine = self._get_max_diff(
+            integrator_fn, fine_step_size, 10, test_system
+        )
         ratio = dH_coarse / dH_fine
 
-        assert 3.5 < ratio < 4.5, (
-            f"Leapfrog not 2nd order: dH(0.1)={dH_coarse:.3e}, "
-            f"dH(0.05)={dH_fine:.3e}, ratio={ratio:.2f} (expected ~4)"
+        target_ratio = 1
+        if name_integrator in {"leapfrog"}:
+            target_ratio = 4
+        if name_integrator in {"omf4"}:
+            target_ratio = 16
+
+        assert 0.67 * target_ratio < ratio < 1.5 * target_ratio, (
+            f"[{name_integrator}, {name_system}] not "
+            f"{target_ratio**0.5:.0f}th order: "
+            f"dH(0.1)={dH_coarse:.3e}, dH(0.05)={dH_fine:.3e}, "
+            f"ratio={ratio:.2f} (expected ~{target_ratio})"
         )
 
     # -----------------------------------------------------------------------
