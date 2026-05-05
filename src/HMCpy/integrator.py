@@ -12,7 +12,7 @@ force from a pseudofermion field phi.
 SU(3) link update: U_mu <- exp(eps * P_mu) . U_mu
   -- torch.linalg.matrix_exp for the matrix exponential.
 
-Conventions match qcd_ml / HMCpy: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
+Conventions match HMCpy: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
 
 from typing import Callable

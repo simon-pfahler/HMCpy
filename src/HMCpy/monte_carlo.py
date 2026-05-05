@@ -16,23 +16,21 @@ One HMC trajectory:
   3. Run symplectic MD trajectory  (U, P) -> (U', P')
   4. Metropolis accept/reject on delta_H = H_new - H_old
 
-Conventions match HMCpy / qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
+Conventions match qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
-
-from typing import Callable
 
 import torch
 from qcd_ml.qcd.dirac import dirac_wilson_clover
 from qcd_ml.util.solver import GMRES
 
 from .integrator import leapfrog, omf4
-from .utility import gell_mann_matrices
 from .physics import (
     gauge_force,
     hamiltonian,
     kinetic_energy,
     wilson_gauge_action,
 )
+from .utility import gell_mann_matrices
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
