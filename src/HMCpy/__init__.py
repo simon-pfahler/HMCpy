@@ -6,13 +6,20 @@ GPU-compatible (via PyTorch), compatible with qcd_ml.
 Modules
 -------
 physics     : Wilson action, gauge force, Hamiltonian, SU(3) reunitarisation
-fermion     : Pseudofermion fields, Dirac operator protocol, fermion force
+fermion     : Pseudofermion fields, fermion action, fermion force, Dirac operator derivatives
 integrator  : Leapfrog and OMF4 symplectic integrators (pure gauge + dynamical)
 monte_carlo : Momentum sampling and Metropolis accept/reject (pure gauge + dynamical)
 utility     : SU(3) generators and exponential update utilities
 """
 
-from .fermion import fermion_force_wilson_analytic, pseudofermion_action
+from .fermion import (
+    apply_DDdag_inv,
+    apply_gamma5,
+    derivative_wilson_clover_dirac,
+    derivative_wilson_dirac,
+    fermion_force_wilson_clover,
+    pseudofermion_action,
+)
 from .utility import gell_mann_matrices
 from .integrator import leapfrog, omf4
 from .monte_carlo import hmc_step, metropolis_accept, sample_momenta
@@ -35,7 +42,11 @@ __all__ = [
     "reunitarize",
     # fermion
     "pseudofermion_action",
-    "fermion_force_wilson_analytic",
+    "apply_DDdag_inv",
+    "apply_gamma5",
+    "fermion_force_wilson_clover",
+    "derivative_wilson_dirac",
+    "derivative_wilson_clover_dirac",
     # integrator
     "leapfrog",
     "omf4",
