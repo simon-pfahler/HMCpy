@@ -3,16 +3,20 @@ fermion.py -- Pseudofermion fields for dynamical fermions in HMC.
 
 This module provides:
   - apply_DDdag_inv(phi, D) -- Solves (DD^dag) chi = phi for chi
-  - pseudofermion_action(phi, D, chi) -- S_pf = phi^dag chi where chi = (DD^dag)^{-1} phi
-  - wilson_fermion_force(U, psi, D) -- Wilson fermion force for HMC
+  - pseudofermion_action(phi, chi) -- S_pf = phi^dag chi where chi = (DD^dag)^{-1} phi
+  - wilson_fermion_force(U, psi) -- Wilson fermion force for HMC
 """
 
 from typing import Callable
 
 import torch
-from qcd_ml.qcd.dirac import gamma
+from qcd_ml.base.hop import v_hop
+from qcd_ml.qcd.dirac import gamma as gamma_list
 from qcd_ml.util.solver import GMRES
 
+from .utility import gell_mann_matrices
+
+gamma = torch.stack(gamma_list)
 gamma5 = gamma[0] @ gamma[1] @ gamma[2] @ gamma[3]
 
 
@@ -109,28 +113,6 @@ def wilson_fermion_force(
     """
     Fermion force for the Wilson Dirac operator.
 
-    The force is computed from the derivative of the pseudofermion action
-    S = φ^dag (D D^dag)^{-1} φ with respect to the gauge field U, where
-    ψ = (D D^dag)^{-1} φ.
-
-    Using the formula:
-        ∂S/∂U_μ(z) = -ψ^dag [∂D/∂U_μ(z) D^dag + D ∂D^dag/∂U_μ(z)] ψ
-
-    For the Wilson Dirac operator, the key derivatives are:
-        - ∂D(z|z+μ)/∂U_μ(z) = 1/2 (γ_μ - I) ⊗ I_color
-        - ∂D(z+μ|z)/∂U_μ(z) = -1/2 (γ_μ + I) ⊗ I_color
-
-    And from gamma-5 hermiticity: D^dag = γ_5 D γ_5, which implies
-    ∂D^dag/∂U_μ(z) = (∂D/∂U_μ(z))^dag.
-
-    For Wilson fermions in Euclidean space (γ_μ^2 = I), the D ∂D^dag/∂U terms
-    vanish, leaving only:
-        F_μ(z) = -2i/3 ψ^dag [∂D/∂U_μ(z) D^dag ψ]
-
-    This gives a matrix in color space:
-        F_μ(z)_{a,b} = -2i/3 [ ψ^dag(z)_{s,a} (γ_μ - I)_{s,s'} (D^dag ψ)(z+μ)_{s',b}
-                           - ψ^dag(z+μ)_{s,a} (γ_μ + I)_{s,s'} (D^dag ψ)(z)_{s',b} ]
-
     Parameters
     ----------
     U : torch.Tensor, shape [4, Lx, Ly, Lz, Lt, Nc, Nc]
@@ -145,49 +127,30 @@ def wilson_fermion_force(
     F : torch.Tensor, same shape as U [4, Lx, Ly, Lz, Lt, Nc, Nc]
         Fermion force, traceless Hermitian at each link
     """
-    Nc = U.shape[-1]
-    Ns = psi.shape[4]
-    eye_color = torch.eye(Nc, dtype=U.dtype, device=U.device)
-    eye_spin = torch.eye(Ns, dtype=U.dtype, device=U.device)
+    eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype, device=U.device)
 
-    # Compute D^dag psi using gamma-5 hermiticity: D^dag psi = gamma5 D gamma5 psi
-    psi_g5 = torch.einsum("ij,...jc->...ic", gamma5, psi)
-    D_psi_g5 = D(psi_g5)
-    D_dag_psi = torch.einsum("ij,...jc->...ic", gamma5, D_psi_g5)
+    Ddag_psi = apply_gamma5(D(apply_gamma5(psi)))
 
-    # Precompute shifted D_dag_psi for forward hops
-    # This is fine as D(x|y) = D(x+a|y+a)
-    D_dag_psi_fwd = [torch.roll(D_dag_psi, -1, dims=mu) for mu in range(4)]
+    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
+    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
+    xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
+    Ti_Ddag_psi = 0.5 * torch.einsum(
+        "icd,...d->i...c", gell_mann_matrices, Ddag_psi
+    )
+    xi_2 = torch.stack(
+        [
+            torch.stack([v_hop(U, mu, 1, Ti_Ddag_psi[i]) for mu in range(4)])
+            for i in range(8)
+        ]
+    )
+    f_1 = 0.5 * torch.einsum(
+        "...sc,icd,...sd->...", zeta_1, gell_mann_matrices, xi_1
+    )
+    f_2 = torch.einsum("...sc,i...sc->...", zeta_2, xi_2)
+    f_2 = torch.stack([torch.roll(f_2[mu], -1, dims=mu) for mu in range(4)])
 
-    F = torch.zeros_like(U)
-
-    for mu in range(4):
-        gamma_mu_minus_I = gamma[mu] - eye_spin
-        gamma_mu_plus_I = gamma[mu] + eye_spin
-
-        # Term 1: ψ^dag(z) (γ_μ - I) H_-μ (D^dag ψ)(z+μ)
-        term1 = torch.einsum(
-            "...sa,ss,...sc->...ac",
-            psi.conj(),
-            gamma_mu_minus_I,
-            D_dag_psi_fwd[mu],
-        )
-
-        # Term 2: ψ^dag(z+μ) (γ_μ + I) (D^dag ψ)(z)
-        psi_fwd = torch.roll(psi, -1, dims=mu)
-        term2 = torch.einsum(
-            "...sa,ss,...sb->...ab", psi_fwd.conj(), gamma_mu_plus_I, D_dag_psi
-        )
-
-        # Compute force from user's formula: F = -2i/3 [ (γ_μ - I) term - (γ_μ + I) term + h.c. ]
-        # Since we compute matrix elements, we explicitly Hermitianize the result.
-        F_mu = (-2j / 3) * (term1 - term2)
-
-        # Project to traceless Hermitian (su(Nc) Lie algebra)
-        F_mu_herm = 0.5 * (F_mu + F_mu.conj().transpose(-1, -2))
-        trace = torch.einsum("...ii->...", F_mu_herm) / Nc
-        F_mu = F_mu_herm - trace.unsqueeze(-1).unsqueeze(-1) * eye_color
-
-        F[mu] = F_mu
+    F = 0.5 * torch.einsum(
+        "icd,...->...cd", gell_mann_matrices, f_1 + f_2
+    ).imag.to(torch.cdouble)
 
     return F
