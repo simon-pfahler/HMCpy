@@ -241,7 +241,7 @@ class TestPhysics:
         Numerical directional derivative of S_W with respect to U_mu(site)
         along the su(3) generator i*lambda_a (central finite difference).
         """
-        gen = gell_mann_matrices[a]  # lambda_a
+        gen = 0.5 * gell_mann_matrices[a]  # lambda_a
         exp_p = torch.linalg.matrix_exp(1j * eps * gen)
         exp_m = torch.linalg.matrix_exp(-1j * eps * gen)
 
@@ -264,9 +264,9 @@ class TestPhysics:
         Analytic directional derivative from the force tensor.
         """
         idx = (mu,) + site
-        gen = gell_mann_matrices[a]
-        val = torch.trace(gen @ F[idx])
-        return -2 * val.item()
+        gen = 0.5 * gell_mann_matrices[a]
+        val = 2 * torch.trace(gen @ F[idx])
+        return -val.item()
 
     @pytest.mark.parametrize("mu", [0, 1, 2, 3])
     def test_force_equals_action_gradient(self, mu):
@@ -308,7 +308,7 @@ class TestPhysics:
         eps = 1e-5
         mu, site, a = 0, (0, 0, 0, 0), 0
         idx = (mu,) + site
-        gen = gell_mann_matrices[a]
+        gen = 0.5 * gell_mann_matrices[a]
         exp_p = torch.linalg.matrix_exp(1j * eps * gen)
 
         U_pert = U.clone()

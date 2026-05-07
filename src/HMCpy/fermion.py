@@ -76,7 +76,7 @@ def apply_DDdag_inv(
         Ddag_psi = apply_gamma5(D_gamma5_psi)
         return D(Ddag_psi)
 
-    chi, _ = GMRES(DDdag_op, phi, phi, **(GMRES_kwargs or {}))
+    chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
     return chi
 
 
@@ -144,13 +144,17 @@ def wilson_fermion_force(
         ]
     )
     f_1 = 0.5 * torch.einsum(
-        "...sc,icd,...sd->...", zeta_1, gell_mann_matrices, xi_1
+        "...sc,icd,...sd->i...", zeta_1, gell_mann_matrices, xi_1
     )
-    f_2 = torch.einsum("...sc,i...sc->...", zeta_2, xi_2)
-    f_2 = torch.stack([torch.roll(f_2[mu], -1, dims=mu) for mu in range(4)])
+    f_2 = torch.einsum("...sc,i...sc->i...", zeta_2, xi_2)
+    f_2 = torch.stack(
+        [torch.roll(f_2[:, mu], -1, dims=mu) for mu in range(4)], dim=1
+    )
 
     F = 0.5 * torch.einsum(
-        "icd,...->...cd", gell_mann_matrices, f_1 + f_2
-    ).imag.to(torch.cdouble)
+        "icd,i...->...cd",
+        gell_mann_matrices,
+        (f_1 + f_2).imag.to(torch.cdouble),
+    )
 
     return F

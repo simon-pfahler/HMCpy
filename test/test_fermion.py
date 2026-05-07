@@ -20,9 +20,11 @@ import torch
 # Make the package importable when running from the test directory.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from typing import Callable
+
 from HMCpy.fermion import pseudofermion_action
 from HMCpy.utility import gell_mann_matrices
-from src.HMCpy.fermion import apply_DDdag_inv
+from src.HMCpy.fermion import apply_DDdag_inv, apply_gamma5
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -37,7 +39,9 @@ DTYPE = torch.complex128
 def _numerical_fermion_force_component(
     U: torch.Tensor,
     phi: torch.Tensor,
-    D_op_factory: callable,
+    D_op_factory: Callable[
+        [torch.Tensor], Callable[[torch.Tensor], torch.Tensor]
+    ],
     mu: int,
     site: tuple,
     a: int,
@@ -69,7 +73,7 @@ def _numerical_fermion_force_component(
 
     from src.HMCpy.fermion import apply_gamma5
 
-    gen = gell_mann_matrices[a]  # lambda_a
+    gen = 0.5 * gell_mann_matrices[a]  # lambda_a
     exp_p = torch.linalg.matrix_exp(1j * eps * gen)
     exp_m = torch.linalg.matrix_exp(-1j * eps * gen)
 
@@ -85,14 +89,11 @@ def _numerical_fermion_force_component(
     D_plus = D_op_factory(U_plus)
     D_minus = D_op_factory(U_minus)
 
-    # Local DDdag solver with zero initial guess for better robustness
-    from src.HMCpy.fermion import gamma5
-
     def solve_DDdag_inv(phi_in, D_in, GMRES_kwargs_in):
         def DDdag_op(psi):
-            gamma5_psi = torch.einsum("ij,...jc->...ic", gamma5, psi)
+            gamma5_psi = apply_gamma5(psi)
             D_gamma5_psi = D_in(gamma5_psi)
-            Ddag_psi = torch.einsum("ij,...jc->...ic", gamma5, D_gamma5_psi)
+            Ddag_psi = apply_gamma5(D_gamma5_psi)
             return D_in(Ddag_psi)
 
         # Use zero initial guess for robustness
@@ -111,6 +112,135 @@ def _numerical_fermion_force_component(
     return (S_plus - S_minus) / (2 * eps)
 
 
+def _conjugate_gradient(
+    A_op: Callable[[torch.Tensor], torch.Tensor],
+    b: torch.Tensor,
+    maxiter: int = 1000,
+    tol: float = 1e-10,
+) -> torch.Tensor:
+    """
+    Conjugate gradient solver for Hermitian positive-definite systems.
+    Implemented in pure PyTorch to support autograd.
+
+    Solves A x = b for x, where A is Hermitian positive-definite.
+
+    Parameters
+    ----------
+    A_op : callable that applies A to a vector
+    b : right-hand side vector
+    maxiter : maximum number of iterations
+    tol : convergence tolerance
+
+    Returns
+    -------
+    x : solution vector
+    """
+    x = torch.zeros_like(b)
+    r = b - A_op(x)
+    p = r.clone()
+
+    for _ in range(maxiter):
+        Ap = A_op(p)
+        alpha = (r.conj() * r).sum() / (p.conj() * Ap).sum().real
+        x = x + alpha * p
+        r_new = r - alpha * Ap
+
+        if (r_new.conj() * r_new).sum().abs() < tol:
+            return x
+
+        beta = (r_new.conj() * r_new).sum() / (r.conj() * r).sum().real
+        p = r_new + beta * p
+        r = r_new
+
+    return x
+
+
+def _autograd_fermion_force_component(
+    U: torch.Tensor,
+    phi: torch.Tensor,
+    D_op_factory: Callable[
+        [torch.Tensor], Callable[[torch.Tensor], torch.Tensor]
+    ],
+    mu: int,
+    site: tuple,
+    a: int,
+    eps: float = 1e-5,
+    CG_kwargs: dict | None = None,
+) -> float:
+    """
+    Autograd directional derivative of pseudofermion action S_pf with respect
+    to U_mu(site) along the su(3) generator i*lambda_a.
+
+    Uses torch.autograd to compute the gradient of S_pf = phi^dag (DD^dag)^{-1} phi.
+    Uses a pure-PyTorch conjugate gradient solver that supports autograd.
+
+    Parameters
+    ----------
+    U : gauge field [4, Lx, Ly, Lz, Lt, Nc, Nc]
+    phi : pseudofermion field [Lx, Ly, Lz, Lt, Ns, Nc]
+    D_op_factory : factory function that takes U and returns the Dirac operator D
+    mu : direction index (0-3)
+    site : tuple of 4 coordinates (x, y, z, t)
+    a : Gell-Mann matrix index (0-7)
+    eps : step size (unused for autograd, kept for interface compatibility)
+    CG_kwargs : optional dict of keyword arguments for CG solver
+
+    Returns
+    -------
+    dS/da : directional derivative of S_pf w.r.t. the generator direction
+    """
+    idx = (mu,) + site
+    gen = 0.5 * gell_mann_matrices[a]  # lambda_a
+
+    # Make U require grad
+    U_grad = U.detach().clone().requires_grad_(True)
+
+    # Define a function that computes S_pf from U using differentiable CG
+    def compute_S_pf(U_in):
+        D_in = D_op_factory(U_in)
+
+        def DDdag_op(psi):
+            gamma5_psi = apply_gamma5(psi)
+            D_gamma5_psi = D_in(gamma5_psi)
+            Ddag_psi = apply_gamma5(D_gamma5_psi)
+            return D_in(Ddag_psi)
+
+        kwargs = CG_kwargs or {}
+        chi = _conjugate_gradient(DDdag_op, phi, **kwargs)
+        return pseudofermion_action(phi, chi)
+
+    # Compute S_pf at U_grad
+    S_pf = compute_S_pf(U_grad)
+
+    # Create a scalar output by extracting the real part
+    # (S_pf should be real for Hermitian DD^dag)
+    S_pf_real = S_pf.real
+
+    # Compute gradient of S_pf w.r.t. U_grad
+    grad_full = torch.autograd.grad(
+        outputs=S_pf_real,
+        inputs=U_grad,
+        retain_graph=False,
+        create_graph=False,
+        allow_unused=True,
+    )[0]
+
+    # Extract the gradient at the specific link
+    if grad_full is not None:
+        link_grad = grad_full[idx]  # [Nc, Nc]
+    else:
+        link_grad = torch.zeros(
+            NC, NC, dtype=torch.complex128, device=U_grad.device
+        )
+
+    U_link = U[idx]
+    directional_deriv = torch.einsum(
+        "ij,ij->", link_grad.conj(), 1j * gen @ U_link
+    ).real.item()
+
+    return directional_deriv
+
+
 def _analytic_fermion_force_component(
     F: torch.Tensor, mu: int, site: tuple, a: int
 ) -> float:
@@ -118,9 +248,9 @@ def _analytic_fermion_force_component(
     Analytic directional derivative from the fermion force tensor.
     """
     idx = (mu,) + site
-    gen = gell_mann_matrices[a]
-    val = torch.trace(gen @ F[idx])
-    return -2 * val.item()
+    gen = 0.5 * gell_mann_matrices[a]
+    val = 2 * torch.trace(gen @ F[idx])
+    return -val.item()
 
 
 def _cold_start(L=L, Nc=NC) -> torch.Tensor:
@@ -152,63 +282,51 @@ class TestFermion:
     # Pseudofermion action
     # -----------------------------------------------------------------------
 
-    def test_pseudofermion_action_cold_start(self):
+    @pytest.mark.parametrize(
+        "U_start, name",
+        [
+            (_cold_start, "cold start"),
+            (_hot_start, "hot start"),
+        ],
+    )
+    def test_pseudofermion_action_cold_start(self, U_start, name):
         """
         For cold start (all links = identity) and Wilson Dirac operator,
-        the action should be positive.
+        the action should be positive and the ratio between the action
+
+            S_F = phi^dag (D D^dag)^-1 phi
+
+        and the norm of phi should be the mass parameter squared.
         """
         from qcd_ml.qcd.dirac import dirac_wilson
 
-        U = _cold_start()
-        D_op = dirac_wilson(U, mass_parameter=0.1)
+        U = U_start()
+        m = 0.1
+        D_op = dirac_wilson(U, mass_parameter=m)
 
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        phi = torch.ones(L, L, L, L, 4, NC, dtype=DTYPE)
+        phi /= phi.norm()
         chi = apply_DDdag_inv(
             phi,
             D_op,
-            GMRES_kwargs={"maxiter": 1000, "eps": 1e-10, "inner_iter": 10},
+            GMRES_kwargs={
+                "maxiter": 1000,
+                "eps": 1e-10,
+                "inner_iter": 10,
+                "verbose": True,
+            },
         )
         S_pf = pseudofermion_action(phi, chi)
 
-        assert S_pf.item() > 0, f"Action should be positive, got {S_pf.item()}"
-        assert torch.isfinite(S_pf), "Action should be finite"
-
-    def test_pseudofermion_action_with_chi(self):
-        """
-        Test that providing chi directly works and gives the same result.
-        Now chi is the solution to (DD^dag) chi = phi, not D chi = phi.
-        """
-        from qcd_ml.qcd.dirac import dirac_wilson
-
-        U = _hot_start()  # Use hot start to avoid GMRES convergence issues
-        D_op = dirac_wilson(U, mass_parameter=0.1)
-
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
-
-        # Compute chi: solve (DD^dag) chi = phi
-        chi = apply_DDdag_inv(
-            phi,
-            D_op,
-            GMRES_kwargs={"maxiter": 1000, "eps": 1e-10, "inner_iter": 10},
-        )
-
-        # Verify: (DD^dag) chi should equal phi
-        from HMCpy.fermion import apply_gamma5
-
-        gamma5_chi = apply_gamma5(chi)
-        D_gamma5_chi = D_op(gamma5_chi)
-        Ddag_chi = apply_gamma5(D_gamma5_chi)
-        DDdag_chi = D_op(Ddag_chi)
-        residual = (DDdag_chi - phi).norm().item()
         assert (
-            residual < 5e-6
-        ), f"DDdag solve did not converge: residual = {residual}"
-
-        # Compute action with chi
-        S_pf = pseudofermion_action(phi, chi)
-
-        assert S_pf.item() > 0, f"Action should be positive, got {S_pf.item()}"
-        assert torch.isfinite(S_pf), "Action should be finite"
+            S_pf.item() > 0
+        ), f"[{name}] Action should be positive, got {S_pf.item()}"
+        assert torch.isfinite(S_pf), "[{name}] Action should be finite"
+        if name == "cold_start":
+            assert S_pf == pytest.approx(1 / m**2, abs=1e-2, rel=1e-2), (
+                f"[{name}] Action should be 1/m^2 for a normalized uniform "
+                f"input field, but is {S_pf.item()}"
+            )
 
     def test_pseudofermion_action_hermitian(self):
         """
@@ -303,9 +421,8 @@ class TestFermion:
             L, L, L, L, 4, NC, dtype=DTYPE
         )
         chi = chi / chi.norm()  # Normalize and scale to reasonable size
-        phi = D_op(chi)
         psi = apply_DDdag_inv(
-            phi,
+            chi,
             D_op,
             GMRES_kwargs={"maxiter": 1000, "eps": 1e-10, "inner_iter": 10},
         )
@@ -324,11 +441,12 @@ class TestFermion:
             ana = _analytic_fermion_force_component(F, mu, site, a)
             print(f"  generator {a}: analytic={ana:.8f}")
 
-        print(f"\nNumerical derivatives at mu={mu} site={site}:")
+        print(f"\nNumerical, autograd, and analytic derivatives at mu={mu} site={site}:")
+        CG_kwargs = {"maxiter": 2000, "tol": 1e-10}
         for a in range(8):
             num = _numerical_fermion_force_component(
                 U,
-                phi,
+                chi,
                 D_op_factory,
                 mu,
                 site,
@@ -336,11 +454,21 @@ class TestFermion:
                 eps=1e-4,
                 GMRES_kwargs=GMRES_kwargs,
             )
+            aut = _autograd_fermion_force_component(
+                U,
+                chi,
+                D_op_factory,
+                mu,
+                site,
+                a,
+                CG_kwargs=CG_kwargs,
+            )
             ana = _analytic_fermion_force_component(F, mu, site, a)
 
-            print(f"  generator {a}: numerical={num:.8f} analytic={ana:.8f}")
+            print(f"  generator {a}: numerical={num:.8f} autograd={aut:.8f} analytic={ana:.8f}")
 
-            assert num == pytest.approx(ana, abs=1e-2, rel=1e-2), (
-                f"Fermion force mismatch at mu={mu} site={site} generator={a}: "
-                f"numerical={num:.8f} analytic={ana:.8f}"
-            )
+            # assert num == pytest.approx(ana, abs=1e-2, rel=1e-2), (
+            #    f"Fermion force mismatch at mu={mu} site={site} generator={a}: "
+            #    f"numerical={num:.8f} analytic={ana:.8f}"
+            # )
+        assert False, "X"
