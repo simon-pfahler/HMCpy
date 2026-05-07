@@ -12,15 +12,7 @@ monte_carlo : Momentum sampling and Metropolis accept/reject (pure gauge + dynam
 utility     : SU(3) generators and exponential update utilities
 """
 
-from .fermion import (
-    apply_DDdag_inv,
-    apply_gamma5,
-    derivative_wilson_clover_dirac,
-    derivative_wilson_dirac,
-    fermion_force_wilson_clover,
-    pseudofermion_action,
-)
-from .utility import gell_mann_matrices
+from .fermion import apply_DDdag_inv, apply_gamma5, pseudofermion_action
 from .integrator import leapfrog, omf4
 from .monte_carlo import hmc_step, metropolis_accept, sample_momenta
 from .physics import (
@@ -31,6 +23,7 @@ from .physics import (
     reunitarize,
     wilson_gauge_action,
 )
+from .utility import gell_mann_matrices
 
 __all__ = [
     # physics
@@ -44,9 +37,6 @@ __all__ = [
     "pseudofermion_action",
     "apply_DDdag_inv",
     "apply_gamma5",
-    "fermion_force_wilson_clover",
-    "derivative_wilson_dirac",
-    "derivative_wilson_clover_dirac",
     # integrator
     "leapfrog",
     "omf4",

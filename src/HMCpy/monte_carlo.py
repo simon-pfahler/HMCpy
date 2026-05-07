@@ -21,8 +21,8 @@ Conventions match qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 
 import torch
 from qcd_ml.qcd.dirac import dirac_wilson_clover
-from qcd_ml.util.solver import GMRES
 
+from .fermion import apply_DDdag_inv, pseudofermion_action
 from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
@@ -145,17 +145,22 @@ def hmc_step(
     P = sample_momenta(U)
 
     # ---- Pseudofermion sampling (if dynamical fermions) ----
+    chi = None
     phi = None
     S_pf_old = 0
     if dynamic:
+        # Sample phi from Gaussian distribution
         chi = torch.randn(
             *lattice_sizes, 4, 3, dtype=torch.cdouble, device=U.device
         )
 
+        # Create Dirac operator for current gauge field
         D_old = dirac_wilson_clover(U, mass_parameter, csw)
         phi = D_old(chi)
 
-        S_pf_old = torch.einsum(chi.conj(), chi).real.sum()
+        # Compute pseudofermion action
+        # S_pf = phi^dag (DD^dag)^-1 phi = chi^dag chi
+        S_pf_old = pseudofermion_action(chi, chi)
 
     # ---- Initial Hamiltonian ----
     H_old = hamiltonian(U, P, beta) + S_pf_old
@@ -184,9 +189,14 @@ def hmc_step(
     # ---- Proposed Hamiltonian ----
     S_pf_new = 0
     if dynamic:
+        # Create Dirac operator for new gauge field
         D_new = dirac_wilson_clover(U_new, mass_parameter, csw)
-        varphi = GMRES(D_new, phi, phi, **GMRES_kwargs)
-        S_pf_new = (varphi.conj() * varphi).real.sum()
+
+        # Solve (D_new D_new^dag) psi = phi for psi
+        psi = apply_DDdag_inv(phi, D_new, GMRES_kwargs=GMRES_kwargs)
+
+        # Compute pseudofermion action S_pf = phi^dag psi
+        S_pf_new = pseudofermion_action(phi, psi)
 
     H_new = kinetic_energy(P_new) + wilson_gauge_action(U_new, beta) + S_pf_new
     """

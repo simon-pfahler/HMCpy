@@ -19,7 +19,6 @@ from typing import Callable
 
 import torch
 
-from .physics import gauge_force, reunitarize
 from .utility import _exp_update_U
 
 # ---------------------------------------------------------------------------
