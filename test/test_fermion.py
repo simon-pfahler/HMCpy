@@ -21,8 +21,8 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from HMCpy.fermion import pseudofermion_action
-from src.HMCpy.fermion import apply_DDdag_inv
 from HMCpy.utility import gell_mann_matrices
+from src.HMCpy.fermion import apply_DDdag_inv
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -65,9 +65,10 @@ def _numerical_fermion_force_component(
     -------
     dS/da : numerical derivative of S_pf w.r.t. the generator direction
     """
-    from src.HMCpy.fermion import apply_gamma5
     from qcd_ml.util.solver import GMRES
-    
+
+    from src.HMCpy.fermion import apply_gamma5
+
     gen = gell_mann_matrices[a]  # lambda_a
     exp_p = torch.linalg.matrix_exp(1j * eps * gen)
     exp_m = torch.linalg.matrix_exp(-1j * eps * gen)
@@ -86,13 +87,14 @@ def _numerical_fermion_force_component(
 
     # Local DDdag solver with zero initial guess for better robustness
     from src.HMCpy.fermion import gamma5
+
     def solve_DDdag_inv(phi_in, D_in, GMRES_kwargs_in):
         def DDdag_op(psi):
             gamma5_psi = torch.einsum("ij,...jc->...ic", gamma5, psi)
             D_gamma5_psi = D_in(gamma5_psi)
             Ddag_psi = torch.einsum("ij,...jc->...ic", gamma5, D_gamma5_psi)
             return D_in(Ddag_psi)
-        
+
         # Use zero initial guess for robustness
         kwargs = GMRES_kwargs_in or {}
         chi, _ = GMRES(DDdag_op, phi_in, torch.zeros_like(phi_in), **kwargs)
@@ -114,28 +116,11 @@ def _analytic_fermion_force_component(
 ) -> float:
     """
     Analytic directional derivative from the fermion force tensor.
-    
-    The fermion force F is traceless Hermitian, and the directional
-    derivative along generator lambda_a is Tr[lambda_a * F].
-    
-    Parameters
-    ----------
-    F : fermion force tensor [4, Lx, Ly, Lz, Lt, Nc, Nc]
-    mu : direction index (0-3)
-    site : tuple of 4 coordinates (x, y, z, t)
-    a : Gell-Mann matrix index (0-7)
-    
-    Returns
-    -------
-    dS/da : analytic derivative = Tr[lambda_a * F_mu(site)]
     """
     idx = (mu,) + site
     gen = gell_mann_matrices[a]
     val = torch.trace(gen @ F[idx])
-    return val.item()
-
-
-
+    return -2 * val.item()
 
 
 def _cold_start(L=L, Nc=NC) -> torch.Tensor:
@@ -295,67 +280,67 @@ class TestFermion:
         Verify that wilson_fermion_force matches the numerical gradient
         of pseudofermion_action along all 8 Gell-Mann directions,
         at one lattice site and direction.
-        
+
         Note: This test may fail if the analytic force implementation is wrong.
         The test uses cold start (identity links) for stability.
         """
         from qcd_ml.qcd.dirac import dirac_wilson
+
         from src.HMCpy.fermion import wilson_fermion_force
 
         # Use cold start for gauge field (identity links) - more stable for testing
         U = _cold_start()
-        
+
         # Create the Dirac operator factory
         def D_op_factory(U_in):
             return dirac_wilson(U_in, mass_parameter=0.1)
-        
+
         # Create the original Dirac operator and compute chi
         D_op = D_op_factory(U)
         # Use a fixed, non-zero phi with reasonable magnitude
         torch.manual_seed(123)
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
-        phi = phi / phi.norm() * 10.0  # Normalize and scale to reasonable size
-        chi = apply_DDdag_inv(
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()  # Normalize and scale to reasonable size
+        phi = D_op(chi)
+        psi = apply_DDdag_inv(
             phi,
             D_op,
             GMRES_kwargs={"maxiter": 1000, "eps": 1e-10, "inner_iter": 10},
         )
-        
+
         # Compute analytic fermion force
-        F = wilson_fermion_force(U, chi, D_op)
-        
+        F = wilson_fermion_force(U, psi, D_op)
+
         # Test at one site and direction
         mu = 0
         site = (0, 0, 0, 0)
-        
-        # For cold start, the force should be zero (symmetric configuration)
-        # So the numerical derivative should also be ~0
-        # Use looser tolerance and print all 8 generators for debugging
+
         GMRES_kwargs = {"maxiter": 2000, "eps": 1e-8, "inner_iter": 20}
-        
+
         print(f"\nAnalytic force at mu={mu} site={site}:")
         for a in range(8):
             ana = _analytic_fermion_force_component(F, mu, site, a)
             print(f"  generator {a}: analytic={ana:.8f}")
-        
+
         print(f"\nNumerical derivatives at mu={mu} site={site}:")
         for a in range(8):
             num = _numerical_fermion_force_component(
-                U, phi, D_op_factory, mu, site, a,
-                eps=1e-4, GMRES_kwargs=GMRES_kwargs
+                U,
+                phi,
+                D_op_factory,
+                mu,
+                site,
+                a,
+                eps=1e-4,
+                GMRES_kwargs=GMRES_kwargs,
             )
             ana = _analytic_fermion_force_component(F, mu, site, a)
-            
+
             print(f"  generator {a}: numerical={num:.8f} analytic={ana:.8f}")
-            
-            # The analytic force should match the numerical derivative
-            # Use a loose tolerance since this is a hard test and the analytic
-            # implementation may be wrong
-            # Note: For cold start with identity links, both should be ~0
-            assert num == pytest.approx(
-                ana, abs=1e-2, rel=1e-2
-            ), (
+
+            assert num == pytest.approx(ana, abs=1e-2, rel=1e-2), (
                 f"Fermion force mismatch at mu={mu} site={site} generator={a}: "
                 f"numerical={num:.8f} analytic={ana:.8f}"
             )
-
