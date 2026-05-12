@@ -95,7 +95,7 @@ def _analytic_force_comp(
     F: torch.Tensor, mu: int, site: tuple, a: int
 ) -> float:
     """Analytic fermion force component from force tensor."""
-    return (
+    return -(
         2 * torch.trace(0.5 * gell_mann_matrices[a] @ F[(mu,) + site])
     ).real.item()
 

@@ -134,8 +134,8 @@ def wilson_fermion_force(
 
     Ddag_psi = apply_gamma5(D(apply_gamma5(psi.clone())))
 
-    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
-    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
+    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), eye_spin - gamma)
+    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), eye_spin + gamma)
     xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
     Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gens, Ddag_psi)
     xi_2 = torch.stack(

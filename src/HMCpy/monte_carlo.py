@@ -20,9 +20,9 @@ Conventions match qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
 
 import torch
-from qcd_ml.qcd.dirac import dirac_wilson_clover
+from qcd_ml.qcd.dirac import dirac_wilson
 
-from .fermion import apply_DDdag_inv, pseudofermion_action
+from .fermion import apply_DDdag_inv, pseudofermion_action, wilson_fermion_force
 from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
@@ -155,7 +155,7 @@ def hmc_step(
         )
 
         # Create Dirac operator for current gauge field
-        D_old = dirac_wilson_clover(U, mass_parameter, csw)
+        D_old = dirac_wilson(U, mass_parameter)
         phi = D_old(chi)
 
         # Compute pseudofermion action
@@ -172,6 +172,13 @@ def hmc_step(
 
     # ---- MD trajectory ----
     force = lambda U: gauge_force(U, beta)
+    if dynamic:
+
+        def force(U):
+            D = dirac_wilson(U, mass_parameter)
+            psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+            return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
+
     integrator_kwargs = dict(
         n_steps=n_steps,
         force=force,
@@ -190,7 +197,7 @@ def hmc_step(
     S_pf_new = 0
     if dynamic:
         # Create Dirac operator for new gauge field
-        D_new = dirac_wilson_clover(U_new, mass_parameter, csw)
+        D_new = dirac_wilson(U_new, mass_parameter)
 
         # Solve (D_new D_new^dag) psi = phi for psi
         psi = apply_DDdag_inv(phi, D_new, GMRES_kwargs=GMRES_kwargs)
