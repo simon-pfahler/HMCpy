@@ -51,12 +51,6 @@ def apply_DDdag_inv(
     Uses D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity.
     Solves (DD^dag) chi = phi via GMRES treating DD^dag as an operator.
 
-    Alternatively, using the identity (DD^dag)^{-1} = gamma5 (D^dag D)^{-1} gamma5,
-    we could solve in two steps:
-        eta = D^{-1} gamma5 phi
-        chi = gamma5 D^{-1} gamma5 eta
-    But the direct approach is more stable.
-
     Parameters
     ----------
     phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
