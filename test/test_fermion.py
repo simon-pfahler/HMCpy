@@ -250,7 +250,7 @@ def _analytic_fermion_force_component(
     idx = (mu,) + site
     gen = 0.5 * gell_mann_matrices[a]
     val = 2 * torch.trace(gen @ F[idx])
-    return -val.item()
+    return val.item()
 
 
 def _cold_start(L=L, Nc=NC) -> torch.Tensor:
@@ -436,12 +436,6 @@ class TestFermion:
 
         GMRES_kwargs = {"maxiter": 2000, "eps": 1e-8, "inner_iter": 20}
 
-        print(f"\nAnalytic force at mu={mu} site={site}:")
-        for a in range(8):
-            ana = _analytic_fermion_force_component(F, mu, site, a)
-            print(f"  generator {a}: analytic={ana:.8f}")
-
-        print(f"\nNumerical, autograd, and analytic derivatives at mu={mu} site={site}:")
         CG_kwargs = {"maxiter": 2000, "tol": 1e-10}
         for a in range(8):
             num = _numerical_fermion_force_component(
@@ -463,12 +457,11 @@ class TestFermion:
                 a,
                 CG_kwargs=CG_kwargs,
             )
-            ana = _analytic_fermion_force_component(F, mu, site, a)
+            ana = _analytic_fermion_force_component(F, mu, site, a).real
 
-            print(f"  generator {a}: numerical={num:.8f} autograd={aut:.8f} analytic={ana:.8f}")
-
-            # assert num == pytest.approx(ana, abs=1e-2, rel=1e-2), (
-            #    f"Fermion force mismatch at mu={mu} site={site} generator={a}: "
-            #    f"numerical={num:.8f} analytic={ana:.8f}"
-            # )
-        assert False, "X"
+            assert num == pytest.approx(
+                ana, abs=1e-8, rel=1e-2
+            ) and aut == pytest.approx(ana, abs=1e-8, rel=1e-2), (
+                f"Fermion force mismatch at mu={mu} site={site} generator={a}: "
+                f"numerical={num:.8f} autograd={aut:.8f} analytic={ana:.8f}"
+            )

@@ -127,33 +127,32 @@ def wilson_fermion_force(
     F : torch.Tensor, same shape as U [4, Lx, Ly, Lz, Lt, Nc, Nc]
         Fermion force, traceless Hermitian at each link
     """
+
+    gens = 0.5 * gell_mann_matrices
+
     eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype, device=U.device)
 
-    Ddag_psi = apply_gamma5(D(apply_gamma5(psi)))
+    Ddag_psi = apply_gamma5(D(apply_gamma5(psi.clone())))
 
     zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
     zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
     xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
-    Ti_Ddag_psi = 0.5 * torch.einsum(
-        "icd,...d->i...c", gell_mann_matrices, Ddag_psi
-    )
+    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gens, Ddag_psi)
     xi_2 = torch.stack(
         [
             torch.stack([v_hop(U, mu, 1, Ti_Ddag_psi[i]) for mu in range(4)])
             for i in range(8)
         ]
     )
-    f_1 = 0.5 * torch.einsum(
-        "...sc,icd,...sd->i...", zeta_1, gell_mann_matrices, xi_1
-    )
-    f_2 = torch.einsum("...sc,i...sc->i...", zeta_2, xi_2)
+    f_1 = torch.einsum("m...sc,icd,m...sd->im...", zeta_1, gens, xi_1)
+    f_2 = torch.einsum("m...sc,im...sc->im...", zeta_2, xi_2)
     f_2 = torch.stack(
-        [torch.roll(f_2[:, mu], -1, dims=mu) for mu in range(4)], dim=1
+        [torch.roll(f_2[:, mu], -1, dims=mu + 1) for mu in range(4)], dim=1
     )
 
-    F = 0.5 * torch.einsum(
-        "icd,i...->...cd",
-        gell_mann_matrices,
+    F = torch.einsum(
+        "icd,im...->m...cd",
+        gens,
         (f_1 + f_2).imag.to(torch.cdouble),
     )
 
