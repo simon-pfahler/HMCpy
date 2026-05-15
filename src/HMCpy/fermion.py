@@ -198,7 +198,7 @@ def wilson_clover_fermion_force(
 
     Ddag_psi = apply_gamma5(D(apply_gamma5(psi.clone())))
 
-    # Compute sigma_{μν} = (i/2) [γ_μ, γ_ν]
+    # Compute sigma_{μν} = 1/2 [γ_μ, γ_ν]
     sigma_mn = torch.zeros((4, 4, 4, 4), dtype=torch.cdouble, device=U.device)
     for mu in range(4):
         for nu in range(4):
@@ -238,19 +238,15 @@ def wilson_clover_fermion_force(
         if p == 4:
             result = torch.einsum("cd,...d->...c", gens[i], result)
         result = v_hop(U, nu, -nudir, result)
-
         if p == 3:
             result = torch.einsum("cd,...d->...c", gens[i], result)
         result = v_hop(U, mu, -mudir, result)
-
         if p == 2:
             result = torch.einsum("cd,...d->...c", gens[i], result)
         result = v_hop(U, nu, nudir, result)
-
         if p == 1:
             result = torch.einsum("cd,...d->...c", gens[i], result)
         result = v_hop(U, mu, mudir, result)
-
         if p == 0:
             result = torch.einsum("cd,...d->...c", gens[i], result)
 
@@ -266,6 +262,7 @@ def wilson_clover_fermion_force(
 
     for i in range(8):  # loop over generators
         for sigma in range(4):  # loop over direction σ
+            sigma_P_total = torch.zeros_like(Ddag_psi)
             for mu in range(4):  # loop over direction μ
                 if mu == sigma:
                     continue
@@ -353,18 +350,18 @@ def wilson_clover_fermion_force(
                 P_total -= compute_P(mu, sigma, -1, -1, 4, i, Ddag_psi)
 
                 # Apply sigma_{σμ} to spin index
-                P_total = torch.einsum(
+                sigma_P_total += torch.einsum(
                     "st,...t c->...s c", sigma_sigma_mu, P_total
                 )
 
-                # Contract with psi^dag and take imaginary part
-                f_clover[i, sigma] -= (
-                    csw
-                    / 8
-                    * torch.einsum(
-                        "...sc,...sc->...", psi.conj(), P_total
-                    ).imag.to(torch.cdouble)
-                )
+            # Contract with psi^dag and take imaginary part
+            f_clover[i, sigma] -= (
+                csw
+                / 8
+                * torch.einsum(
+                    "...sc,...sc->...", psi.conj(), sigma_P_total
+                ).imag.to(torch.cdouble)
+            )
 
     # Combine generator contributions with T_i matrices
     F_clover = torch.einsum("icd,im...->m...cd", gens, f_clover)
