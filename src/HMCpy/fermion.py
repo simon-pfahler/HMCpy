@@ -278,62 +278,74 @@ def wilson_clover_fermion_force(
 
                 # p=1 (a): P_{μ,-σ,i}^{(1)}(z+μ) - P_{-μ,-σ,i}^{(1)}(z-μ)
                 P_total += torch.roll(
-                    compute_P(mu, sigma, 1, -1, 1, i, Ddag_psi), -1, dims=[mu]
+                    compute_P(mu, sigma, 1, -1, 1, i, Ddag_psi),
+                    -1,
+                    dims=[mu + 1],
                 )
                 P_total -= torch.roll(
-                    compute_P(mu, sigma, -1, -1, 1, i, Ddag_psi), 1, dims=[mu]
+                    compute_P(mu, sigma, -1, -1, 1, i, Ddag_psi),
+                    1,
+                    dims=[mu + 1],
                 )
 
                 # p=1 (b): P_{σ,-μ,i}^{(1)}(z+σ) - P_{σ,μ,i}^{(1)}(z+σ)
                 P_total += torch.roll(
                     compute_P(sigma, mu, 1, -1, 1, i, Ddag_psi),
                     -1,
-                    dims=[sigma],
+                    dims=[sigma + 1],
                 )
                 P_total -= torch.roll(
-                    compute_P(sigma, mu, 1, 1, 1, i, Ddag_psi), -1, dims=[sigma]
+                    compute_P(sigma, mu, 1, 1, 1, i, Ddag_psi),
+                    -1,
+                    dims=[sigma + 1],
                 )
 
                 # p=2 (a): P_{μ,σ,i}^{(2)}(z+σ+μ) - P_{-μ,σ,i}^{(2)}(z+σ-μ)
                 P_total += torch.roll(
                     compute_P(mu, sigma, 1, 1, 2, i, Ddag_psi),
                     [-1, -1],
-                    dims=[sigma, mu],
+                    dims=[sigma + 1, mu + 1],
                 )
                 P_total -= torch.roll(
                     compute_P(mu, sigma, -1, 1, 2, i, Ddag_psi),
                     [-1, 1],
-                    dims=[sigma, mu],
+                    dims=[sigma + 1, mu + 1],
                 )
 
                 # p=2 (b): P_{σ,μ,i}^{(2)}(z+σ+μ) - P_{σ,-μ,i}^{(2)}(z+σ-μ)
                 P_total += torch.roll(
                     compute_P(sigma, mu, 1, 1, 2, i, Ddag_psi),
                     [-1, -1],
-                    dims=[sigma, mu],
+                    dims=[sigma + 1, mu + 1],
                 )
                 P_total -= torch.roll(
                     compute_P(sigma, mu, 1, -1, 2, i, Ddag_psi),
                     [-1, 1],
-                    dims=[sigma, mu],
+                    dims=[sigma + 1, mu + 1],
                 )
 
                 # p=3 (a): P_{-μ,σ,i}^{(3)}(z+σ) - P_{μ,σ,i}^{(3)}(z+σ)
                 P_total += torch.roll(
                     compute_P(mu, sigma, -1, 1, 3, i, Ddag_psi),
                     -1,
-                    dims=[sigma],
+                    dims=[sigma + 1],
                 )
                 P_total -= torch.roll(
-                    compute_P(mu, sigma, 1, 1, 3, i, Ddag_psi), -1, dims=[sigma]
+                    compute_P(mu, sigma, 1, 1, 3, i, Ddag_psi),
+                    -1,
+                    dims=[sigma + 1],
                 )
 
                 # p=3 (b): P_{-σ,μ,i}^{(3)}(z+μ) - P_{-σ,-μ,i}^{(3)}(z-μ)
                 P_total += torch.roll(
-                    compute_P(sigma, mu, -1, 1, 3, i, Ddag_psi), -1, dims=[mu]
+                    compute_P(sigma, mu, -1, 1, 3, i, Ddag_psi),
+                    -1,
+                    dims=[mu + 1],
                 )
                 P_total -= torch.roll(
-                    compute_P(sigma, mu, -1, -1, 3, i, Ddag_psi), 1, dims=[mu]
+                    compute_P(sigma, mu, -1, -1, 3, i, Ddag_psi),
+                    1,
+                    dims=[mu + 1],
                 )
 
                 # p=4: P_{μ,-σ,i}^{(4)} - P_{-μ,-σ,i}^{(4)}
