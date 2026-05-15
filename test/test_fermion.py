@@ -8,7 +8,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from test.utils import DTYPE, NC, L, cold_start, conjugate_gradient, hot_start
+from test.utils import DTYPE, NC, L, MASS, cold_start, conjugate_gradient, hot_start
 from typing import Callable
 
 from HMCpy.fermion import pseudofermion_action
@@ -109,7 +109,7 @@ class TestFermion:
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = U_fn()
-        m = 0.1
+        m = MASS
         D = dirac_wilson(U, mass_parameter=m)
         # Normalized uniform phi: norm = sqrt(L^4 * 4 * NC) for ones
         phi = torch.ones(L, L, L, L, 4, NC, dtype=DTYPE)
@@ -133,7 +133,7 @@ class TestFermion:
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = cold_start()
-        D = dirac_wilson(U, mass_parameter=0.1)
+        D = dirac_wilson(U, mass_parameter=MASS)
         phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
         chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
 
@@ -145,7 +145,7 @@ class TestFermion:
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = cold_start()
-        D = dirac_wilson(U, mass_parameter=0.1)
+        D = dirac_wilson(U, mass_parameter=MASS)
         phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
 
         chi1 = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
@@ -167,7 +167,7 @@ class TestFermion:
 
         torch.manual_seed(123)
         U = U_fn()
-        D = dirac_wilson(U, mass_parameter=0.1)
+        D = dirac_wilson(U, mass_parameter=MASS)
 
         chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
             L, L, L, L, 4, NC, dtype=DTYPE
@@ -181,7 +181,7 @@ class TestFermion:
         aut_kw = {"maxiter": 2000, "tol": 1e-10}
 
         def D_factory(U_in):
-            return dirac_wilson(U_in, mass_parameter=0.1)
+            return dirac_wilson(U_in, mass_parameter=MASS)
 
         for a in range(8):
             num = _numerical_force_comp(

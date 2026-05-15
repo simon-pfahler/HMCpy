@@ -9,6 +9,7 @@ Shared constants:
   - NC: Number of colors for SU(Nc) (3)
   - DTYPE: Data type for tensors (torch.complex128)
   - BETA: Gauge coupling parameter (6.0)
+  - MASS: Fermion mass parameter (0.1)
 
 Shared functions:
   - cold_start: Generate cold start gauge field (identity links)
@@ -25,6 +26,7 @@ L = 2  # lattice side length
 NC = 3  # SU(3)
 DTYPE = torch.complex128
 BETA = 6.0  # gauge coupling
+MASS = 0.1  # fermion mass parameter
 
 
 # ---------------------------------------------------------------------------
