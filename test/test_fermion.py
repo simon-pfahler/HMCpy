@@ -8,7 +8,15 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from test.utils import DTYPE, NC, L, MASS, cold_start, conjugate_gradient, hot_start
+from test.utils import (
+    DTYPE,
+    MASS,
+    NC,
+    L,
+    cold_start,
+    conjugate_gradient,
+    hot_start,
+)
 from typing import Callable
 
 from HMCpy.fermion import pseudofermion_action
