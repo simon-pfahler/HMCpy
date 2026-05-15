@@ -30,6 +30,7 @@ from HMCpy.physics import (
     wilson_gauge_action,
 )
 from HMCpy.utility import gell_mann_matrices
+from test.utils import apply_gauge_transform, random_SU3
 
 
 class TestPhysics:
@@ -241,3 +242,42 @@ class TestPhysics:
         T = kinetic_energy(P)
         S = wilson_gauge_action(U, BETA)
         assert H.item() == pytest.approx((T + S).item(), rel=1e-12)
+
+    # --- Gauge transformation properties ---
+
+    def test_gauge_force_transforms_correctly(self):
+        r"""Gauge force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
+        torch.manual_seed(12345)
+        U = hot_start()
+
+        # Compute original gauge force
+        F_original = gauge_force(U, BETA)
+
+        # Generate random gauge transformation
+        Omega = random_SU3(seed=999)
+        Omega_field = Omega.expand(*U.shape[1:5], NC, NC)
+
+        # Apply gauge transformation to U
+        U_transformed = apply_gauge_transform(U, Omega_field)
+
+        # Compute transformed gauge force
+        F_transformed = gauge_force(U_transformed, BETA)
+
+        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
+        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        F_expected = torch.zeros_like(F_transformed)
+        for mu in range(4):
+            F_expected[mu] = torch.einsum(
+                "...ab,...bc,...cd->...ad",
+                Omega_field,
+                F_original[mu],
+                Omega_dag,
+            )
+
+        # Check transformation
+        for mu in range(4):
+            assert torch.allclose(
+                F_transformed[mu],
+                F_expected[mu],
+                atol=1e-12,
+            ), f"Gauge force at mu={mu} does not transform correctly"

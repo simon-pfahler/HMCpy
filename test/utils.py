@@ -110,3 +110,65 @@ def conjugate_gradient(
         r = r_new
 
     return x
+
+
+# ---------------------------------------------------------------------------
+# Gauge transformation utilities
+# ---------------------------------------------------------------------------
+
+
+def random_SU3(seed: int | None = None) -> torch.Tensor:
+    """
+    Generate random SU(3) matrix.
+
+    Parameters
+    ----------
+    seed : int or None
+        Random seed for reproducibility
+
+    Returns
+    -------
+    Omega : torch.Tensor, shape [3, 3]
+        Random SU(3) matrix
+    """
+    if seed is not None:
+        g = torch.Generator()
+        g.manual_seed(seed)
+    else:
+        g = None
+    X = torch.randn(3, 3, dtype=DTYPE, generator=g)
+    Q, _ = torch.linalg.qr(X)
+    det = torch.linalg.det(Q)
+    phase = det / det.abs()
+    phase_root = torch.exp(torch.log(phase + 1e-30j) / NC)
+    return (Q / phase_root).detach()
+
+
+def apply_gauge_transform(U: torch.Tensor, Omega: torch.Tensor) -> torch.Tensor:
+    r"""
+    Apply gauge transformation to gauge field: U_μ(x) -> Omega(x) U_μ(x) Omega^\dag(x+μ).
+
+    Parameters
+    ----------
+    U : torch.Tensor, shape [4, Lx, Ly, Lz, Lt, Nc, Nc]
+        Gauge field
+    Omega : torch.Tensor, shape [Lx, Ly, Lz, Lt, Nc, Nc]
+        Gauge transformation
+
+    Returns
+    -------
+    U_transformed : torch.Tensor, same shape as U
+        Transformed gauge field
+    """
+    U_transformed = torch.zeros_like(U)
+    Omega_dag = Omega.conj().transpose(-1, -2)
+    for mu in range(4):
+        Omega_shifted = torch.roll(Omega, -1, dims=[mu])
+        Omega_shifted_dag = torch.roll(Omega_dag, -1, dims=[mu])
+        U_transformed[mu] = torch.einsum(
+            "...ab,...bc,...cd->...ad",
+            Omega,
+            U[mu],
+            Omega_shifted_dag,
+        )
+    return U_transformed

@@ -328,3 +328,127 @@ class TestCloverFermion:
 
         # Check finite
         assert torch.all(torch.isfinite(F)), f"[{name}] Force has non-finite values"
+
+
+class TestGaugeTransformation:
+    """Tests for gauge transformation properties of forces."""
+
+    def test_wilson_fermion_force_transforms_correctly(self):
+        r"""Wilson fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
+        from qcd_ml.qcd.dirac import dirac_wilson
+        from src.HMCpy.fermion import wilson_fermion_force
+        from test.utils import apply_gauge_transform, random_SU3
+
+        torch.manual_seed(12346)
+        U = hot_start()
+        m = MASS
+
+        D = dirac_wilson(U, mass_parameter=m)
+
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()
+        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+
+        # Compute original Wilson fermion force
+        F_original = wilson_fermion_force(U, psi, D)
+
+        # Generate random gauge transformation
+        Omega = random_SU3(seed=1000)
+        Omega_field = Omega.expand(*U.shape[1:5], NC, NC)
+
+        # Transform psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
+        # Result: psi_transformed(x, s, c)
+        psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, psi)
+
+        # Apply gauge transformation to U
+        U_transformed = apply_gauge_transform(U, Omega_field)
+
+        # Create new Dirac operator with transformed U
+        D_transformed = dirac_wilson(U_transformed, mass_parameter=m)
+
+        # Compute transformed Wilson fermion force
+        F_transformed = wilson_fermion_force(
+            U_transformed, psi_transformed, D_transformed
+        )
+
+        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
+        F_expected = torch.zeros_like(F_transformed)
+        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        for mu in range(4):
+            F_expected[mu] = torch.einsum(
+                "...ab,...bc,...cd->...ad",
+                Omega_field,
+                F_original[mu],
+                Omega_dag,
+            )
+
+        # Check transformation
+        for mu in range(4):
+            assert torch.allclose(
+                F_transformed[mu],
+                F_expected[mu],
+                atol=1e-10,
+            ), f"Wilson fermion force at mu={mu} does not transform correctly"
+
+    def test_wilson_clover_fermion_force_transforms_correctly(self):
+        r"""Wilson-Clover fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
+        from qcd_ml.qcd.dirac import dirac_wilson_clover
+        from test.utils import apply_gauge_transform, random_SU3
+
+        torch.manual_seed(12347)
+        U = hot_start()
+        m = MASS
+        csw = 1.0
+
+        D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()
+        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+
+        # Compute original Wilson-Clover fermion force
+        F_original = wilson_clover_fermion_force(U, psi, D, csw)
+
+        # Generate random gauge transformation
+        Omega = random_SU3(seed=1001)
+        Omega_field = Omega.expand(*U.shape[1:5], NC, NC)
+
+        # Transform psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
+        # Result: psi_transformed(x, s, c)
+        psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, psi)
+
+        # Apply gauge transformation to U
+        U_transformed = apply_gauge_transform(U, Omega_field)
+
+        # Create new Dirac operator with transformed U
+        D_transformed = dirac_wilson_clover(
+            U_transformed, mass_parameter=m, csw=csw
+        )
+
+        # Compute transformed Wilson-Clover fermion force
+        F_transformed = wilson_clover_fermion_force(
+            U_transformed, psi_transformed, D_transformed, csw
+        )
+
+        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
+        F_expected = torch.zeros_like(F_transformed)
+        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        for mu in range(4):
+            F_expected[mu] = torch.einsum(
+                "...ab,...bc,...cd->...ad",
+                Omega_field,
+                F_original[mu],
+                Omega_dag,
+            )
+
+        # Check transformation
+        for mu in range(4):
+            assert torch.allclose(
+                F_transformed[mu],
+                F_expected[mu],
+                atol=1e-10,
+            ), f"Wilson-Clover fermion force at mu={mu} does not transform correctly"
