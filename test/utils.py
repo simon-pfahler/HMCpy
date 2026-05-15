@@ -26,12 +26,13 @@ L = 2  # lattice side length
 NC = 3  # SU(3)
 DTYPE = torch.complex128
 BETA = 6.0  # gauge coupling
-MASS = 0.1  # fermion mass parameter
+MASS = 0.0  # fermion mass parameter
 
 
 # ---------------------------------------------------------------------------
 # Gauge field initialization
 # ---------------------------------------------------------------------------
+
 
 def cold_start(L=L, Nc=NC) -> torch.Tensor:
     """Generate a cold start gauge field with all links = identity."""
@@ -54,6 +55,7 @@ def hot_start(L=L, Nc=NC, seed=SEED) -> torch.Tensor:
 # Momenta utilities
 # ---------------------------------------------------------------------------
 
+
 def random_momenta(U: torch.Tensor, seed=SEED) -> torch.Tensor:
     """Generate random traceless Hermitian momenta."""
     from HMCpy.monte_carlo import sample_momenta
@@ -65,6 +67,7 @@ def random_momenta(U: torch.Tensor, seed=SEED) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 # Solver utilities
 # ---------------------------------------------------------------------------
+
 
 def conjugate_gradient(
     A_op: callable,
