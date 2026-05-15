@@ -207,7 +207,13 @@ def wilson_clover_fermion_force(
             )
 
     def compute_P(
-        mu: int, nu: int, p: int, i: int, field: torch.Tensor
+        mu: int,
+        nu: int,
+        mudir: int,
+        nudir: int,
+        p: int,
+        i: int,
+        field: torch.Tensor,
     ) -> torch.Tensor:
         """
         Compute P_{μ,ν,i}^{(p)} applied to field.
@@ -217,7 +223,8 @@ def wilson_clover_fermion_force(
 
         Parameters
         ----------
-        mu, nu : direction indices (0-3 for x,y,z,t)
+        mu, nu : dimension indices (0-3 for x,y,z,t)
+        mudir, nudir : forward or negative direction (1,-1)
         p : which P term (0-4)
         i : generator index (0-7)
         field : input spinor field
@@ -230,19 +237,19 @@ def wilson_clover_fermion_force(
 
         if p == 4:
             result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, nu, -1, result)
+        result = v_hop(U, nu, -nudir, result)
 
         if p == 3:
             result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, mu, -1, result)
+        result = v_hop(U, mu, -mudir, result)
 
         if p == 2:
             result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, nu, 1, result)
+        result = v_hop(U, nu, nudir, result)
 
         if p == 1:
             result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, mu, 1, result)
+        result = v_hop(U, mu, mudir, result)
 
         if p == 0:
             result = torch.einsum("cd,...d->...c", gens[i], result)
@@ -266,60 +273,72 @@ def wilson_clover_fermion_force(
                 sigma_sigma_mu = sigma_mn[sigma, mu]
 
                 # p=0: P_{-σ,-μ,i}^{(0)} - P_{-σ,μ,i}^{(0)}
-                # Note: In our convention, negative directions are -mu-1
-                P0_term1 = compute_P(sigma, mu, 0, i, Ddag_psi)
-                P0_term2 = compute_P(sigma, -mu - 1, 0, i, Ddag_psi)
-                p0 = P0_term2 - P0_term1
+                P_total = compute_P(sigma, mu, -1, -1, 0, i, Ddag_psi)
+                P_total -= compute_P(sigma, mu, -1, 1, 0, i, Ddag_psi)
 
-                # p=1: P_{μ,-σ,i}^{(1)}(z+μ) - P_{-μ,-σ,i}^{(1)}(z-μ)
-                P1a_pos = compute_P(mu, -sigma - 1, 1, i, Ddag_psi)
-                P1a_neg = compute_P(-mu - 1, -sigma - 1, 1, i, Ddag_psi)
-                P1a_pos = torch.roll(P1a_pos, -1, dims=[mu])
-                P1a_neg = torch.roll(P1a_neg, 1, dims=[mu])
+                # p=1 (a): P_{μ,-σ,i}^{(1)}(z+μ) - P_{-μ,-σ,i}^{(1)}(z-μ)
+                P_total += torch.roll(
+                    compute_P(mu, sigma, 1, -1, 1, i, Ddag_psi), -1, dims=[mu]
+                )
+                P_total -= torch.roll(
+                    compute_P(mu, sigma, -1, -1, 1, i, Ddag_psi), 1, dims=[mu]
+                )
 
-                # p=1: P_{σ,-μ,i}^{(1)}(z+σ) - P_{σ,μ,i}^{(1)}(z+σ)
-                P1b_pos = compute_P(sigma, -mu - 1, 1, i, Ddag_psi)
-                P1b_neg = compute_P(sigma, mu, 1, i, Ddag_psi)
-                P1b_pos = torch.roll(P1b_pos, -1, dims=[sigma])
-                P1b_neg = torch.roll(P1b_neg, -1, dims=[sigma])
+                # p=1 (b): P_{σ,-μ,i}^{(1)}(z+σ) - P_{σ,μ,i}^{(1)}(z+σ)
+                P_total += torch.roll(
+                    compute_P(sigma, mu, 1, -1, 1, i, Ddag_psi),
+                    -1,
+                    dims=[sigma],
+                )
+                P_total -= torch.roll(
+                    compute_P(sigma, mu, 1, 1, 1, i, Ddag_psi), -1, dims=[sigma]
+                )
 
-                p1 = P1a_pos - P1a_neg + P1b_pos - P1b_neg
+                # p=2 (a): P_{μ,σ,i}^{(2)}(z+σ+μ) - P_{-μ,σ,i}^{(2)}(z+σ-μ)
+                P_total += torch.roll(
+                    compute_P(mu, sigma, 1, 1, 2, i, Ddag_psi),
+                    [-1, -1],
+                    dims=[sigma, mu],
+                )
+                P_total -= torch.roll(
+                    compute_P(mu, sigma, -1, 1, 2, i, Ddag_psi),
+                    [-1, 1],
+                    dims=[sigma, mu],
+                )
 
-                # p=2: P_{μ,σ,i}^{(2)}(z+σ+μ) - P_{-μ,σ,i}^{(2)}(z+σ-μ)
-                P2a_pos = compute_P(mu, sigma, 2, i, Ddag_psi)
-                P2a_neg = compute_P(-mu - 1, sigma, 2, i, Ddag_psi)
-                P2a_pos = torch.roll(P2a_pos, [-1, -1], dims=[sigma, mu])
-                P2a_neg = torch.roll(P2a_neg, [-1, 1], dims=[sigma, mu])
+                # p=2 (b): P_{σ,μ,i}^{(2)}(z+σ+μ) - P_{σ,-μ,i}^{(2)}(z+σ-μ)
+                P_total += torch.roll(
+                    compute_P(sigma, mu, 1, 1, 2, i, Ddag_psi),
+                    [-1, -1],
+                    dims=[sigma, mu],
+                )
+                P_total -= torch.roll(
+                    compute_P(sigma, mu, 1, -1, 2, i, Ddag_psi),
+                    [-1, 1],
+                    dims=[sigma, mu],
+                )
 
-                # p=2: P_{σ,μ,i}^{(2)}(z+σ+μ) - P_{σ,-μ,i}^{(2)}(z+σ-μ)
-                P2b_pos = compute_P(sigma, mu, 2, i, Ddag_psi)
-                P2b_neg = compute_P(sigma, -mu - 1, 2, i, Ddag_psi)
-                P2b_pos = torch.roll(P2b_pos, [-1, -1], dims=[sigma, mu])
-                P2b_neg = torch.roll(P2b_neg, [-1, 1], dims=[sigma, mu])
+                # p=3 (a): P_{-μ,σ,i}^{(3)}(z+σ) - P_{μ,σ,i}^{(3)}(z+σ)
+                P_total += torch.roll(
+                    compute_P(mu, sigma, -1, 1, 3, i, Ddag_psi),
+                    -1,
+                    dims=[sigma],
+                )
+                P_total -= torch.roll(
+                    compute_P(mu, sigma, 1, 1, 3, i, Ddag_psi), -1, dims=[sigma]
+                )
 
-                p2 = P2a_pos - P2a_neg + P2b_pos - P2b_neg
-
-                # p=3: P_{-μ,σ,i}^{(3)}(z+σ) - P_{μ,σ,i}^{(3)}(z+σ)
-                P3a_pos = compute_P(-mu - 1, sigma, 3, i, Ddag_psi)
-                P3a_neg = compute_P(mu, sigma, 3, i, Ddag_psi)
-                P3a_pos = torch.roll(P3a_pos, -1, dims=[sigma])
-                P3a_neg = torch.roll(P3a_neg, -1, dims=[sigma])
-
-                # p=3: P_{-σ,μ,i}^{(3)}(z+μ) - P_{-σ,-μ,i}^{(3)}(z-μ)
-                P3b_pos = compute_P(-sigma - 1, mu, 3, i, Ddag_psi)
-                P3b_neg = compute_P(-sigma - 1, -mu - 1, 3, i, Ddag_psi)
-                P3b_pos = torch.roll(P3b_pos, -1, dims=[mu])
-                P3b_neg = torch.roll(P3b_neg, 1, dims=[mu])
-
-                p3 = P3a_pos - P3a_neg + P3b_pos - P3b_neg
+                # p=3 (b): P_{-σ,μ,i}^{(3)}(z+μ) - P_{-σ,-μ,i}^{(3)}(z-μ)
+                P_total += torch.roll(
+                    compute_P(sigma, mu, -1, 1, 3, i, Ddag_psi), -1, dims=[mu]
+                )
+                P_total -= torch.roll(
+                    compute_P(sigma, mu, -1, -1, 3, i, Ddag_psi), 1, dims=[mu]
+                )
 
                 # p=4: P_{μ,-σ,i}^{(4)} - P_{-μ,-σ,i}^{(4)}
-                P4_pos = compute_P(mu, -sigma - 1, 4, i, Ddag_psi)
-                P4_neg = compute_P(-mu - 1, -sigma - 1, 4, i, Ddag_psi)
-                p4 = P4_pos - P4_neg
-
-                # Sum all P terms
-                P_total = p0 + p1 + p2 + p3 + p4
+                P_total += compute_P(mu, sigma, 1, -1, 4, i, Ddag_psi)
+                P_total -= compute_P(mu, sigma, -1, -1, 4, i, Ddag_psi)
 
                 # Apply sigma_{σμ} to spin index
                 P_total = torch.einsum(
@@ -336,7 +355,7 @@ def wilson_clover_fermion_force(
                 )
 
     # Combine generator contributions with T_i matrices
-    F_clover = torch.einsum("im...,icd->m...cd", f_clover, gens)
+    F_clover = torch.einsum("icd,im...->m...cd", gens, f_clover)
 
     # Combine Wilson and clover forces
     F_total = F_wilson + F_clover
