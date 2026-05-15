@@ -20,9 +20,9 @@ Conventions match qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
 
 import torch
-from qcd_ml.qcd.dirac import dirac_wilson
+from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
-from .fermion import apply_DDdag_inv, pseudofermion_action, wilson_fermion_force
+from .fermion import apply_DDdag_inv, pseudofermion_action, wilson_clover_fermion_force, wilson_fermion_force
 from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
@@ -148,6 +148,7 @@ def hmc_step(
     chi = None
     phi = None
     S_pf_old = 0
+    use_clover = csw != 0.0 and csw is not None
     if dynamic:
         # Sample phi from Gaussian distribution
         chi = torch.randn(
@@ -155,7 +156,10 @@ def hmc_step(
         )
 
         # Create Dirac operator for current gauge field
-        D_old = dirac_wilson(U, mass_parameter)
+        if use_clover:
+            D_old = dirac_wilson_clover(U, mass_parameter, csw=csw)
+        else:
+            D_old = dirac_wilson(U, mass_parameter)
         phi = D_old(chi)
 
         # Compute pseudofermion action
@@ -168,11 +172,20 @@ def hmc_step(
     # ---- MD trajectory ----
     force = lambda U: gauge_force(U, beta)
     if dynamic:
+        if use_clover:
 
-        def force(U):
-            D = dirac_wilson(U, mass_parameter)
-            psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
-            return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
+            def force(U):
+                D = dirac_wilson_clover(U, mass_parameter, csw=csw)
+                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                return gauge_force(U, beta) + wilson_clover_fermion_force(
+                    U, psi, D, csw
+                )
+        else:
+
+            def force(U):
+                D = dirac_wilson(U, mass_parameter)
+                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
 
     integrator_kwargs = dict(
         n_steps=n_steps,
@@ -192,7 +205,10 @@ def hmc_step(
     S_pf_new = 0
     if dynamic:
         # Create Dirac operator for new gauge field
-        D_new = dirac_wilson(U_new, mass_parameter)
+        if use_clover:
+            D_new = dirac_wilson_clover(U_new, mass_parameter, csw=csw)
+        else:
+            D_new = dirac_wilson(U_new, mass_parameter)
 
         # Solve (D_new D_new^dag) psi = phi for psi
         psi = apply_DDdag_inv(phi, D_new, GMRES_kwargs=GMRES_kwargs)

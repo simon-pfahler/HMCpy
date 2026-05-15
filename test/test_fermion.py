@@ -21,7 +21,7 @@ from typing import Callable
 
 from HMCpy.fermion import pseudofermion_action
 from HMCpy.utility import gell_mann_matrices
-from src.HMCpy.fermion import apply_DDdag_inv, apply_gamma5
+from src.HMCpy.fermion import apply_DDdag_inv, apply_gamma5, wilson_clover_fermion_force
 
 GMRES_OPTS = {"maxiter": 1000, "eps": 1e-10, "inner_iter": 10}
 
@@ -206,3 +206,125 @@ class TestFermion:
             assert aut == pytest.approx(
                 ana, abs=1e-8, rel=1e-2
             ), f"[{name}] aut={aut:.6e} != ana={ana:.6e} (a={a})"
+
+
+class TestCloverFermion:
+    """Tests for Wilson-Clover fermion force."""
+
+    @pytest.mark.parametrize(
+        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+    )
+    def test_clover_force_matches_wilson_at_csw_zero(self, U_fn, name):
+        """Wilson-Clover force with csw=0 matches Wilson force."""
+        from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
+
+        from src.HMCpy.fermion import wilson_fermion_force
+
+        torch.manual_seed(123)
+        U = U_fn()
+        m = MASS
+        csw = 0.0
+
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()
+
+        # Compute Wilson force
+        D_wilson = dirac_wilson(U, mass_parameter=m)
+        psi_wilson = apply_DDdag_inv(chi, D_wilson, GMRES_kwargs=GMRES_OPTS)
+        F_wilson = wilson_fermion_force(U, psi_wilson, D_wilson)
+
+        # Compute Wilson-Clover force with csw=0
+        D_clover = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+        psi_clover = apply_DDdag_inv(chi, D_clover, GMRES_kwargs=GMRES_OPTS)
+        F_clover = wilson_clover_fermion_force(U, psi_clover, D_clover, csw)
+
+        # They should be equal
+        assert torch.allclose(
+            F_wilson, F_clover, atol=1e-12, rtol=1e-12
+        ), f"[{name}] Forces differ by {(F_wilson - F_clover).abs().max().item():.6e}"
+
+    @pytest.mark.parametrize(
+        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+    )
+    def test_clover_force_matches_gradient(self, U_fn, name):
+        """Wilson-Clover fermion force matches numerical and autograd gradients."""
+        from qcd_ml.qcd.dirac import dirac_wilson_clover
+
+        torch.manual_seed(456)
+        U = U_fn()
+        m = MASS
+        csw = 1.0
+
+        D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()
+        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        F = wilson_clover_fermion_force(U, psi, D, csw)
+
+        mu, site = 0, (0, 0, 0, 0)
+        num_kw = {"maxiter": 2000, "eps": 1e-8, "inner_iter": 20}
+        aut_kw = {"maxiter": 2000, "tol": 1e-10}
+
+        def D_factory(U_in):
+            return dirac_wilson_clover(U_in, mass_parameter=m, csw=csw)
+
+        for a in range(8):
+            num = _numerical_force_comp(
+                U, chi, D_factory, mu, site, a, GMRES_kwargs=num_kw
+            )
+            aut = _autograd_force_comp(
+                U, chi, D_factory, mu, site, a, CG_kwargs=aut_kw
+            )
+            ana = _analytic_force_comp(F, mu, site, a)
+
+            assert num == pytest.approx(
+                ana, abs=1e-6, rel=1e-2
+            ), f"[{name}] num={num:.6e} != ana={ana:.6e} (a={a})"
+            assert aut == pytest.approx(
+                ana, abs=1e-6, rel=1e-2
+            ), f"[{name}] aut={aut:.6e} != ana={ana:.6e} (a={a})"
+
+    @pytest.mark.parametrize(
+        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+    )
+    def test_clover_force_shape_and_properties(self, U_fn, name):
+        """Wilson-Clover force has correct shape and is traceless Hermitian."""
+        from qcd_ml.qcd.dirac import dirac_wilson_clover
+
+        torch.manual_seed(789)
+        U = U_fn()
+        m = MASS
+        csw = 1.5
+
+        D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=DTYPE
+        )
+        chi = chi / chi.norm()
+        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        F = wilson_clover_fermion_force(U, psi, D, csw)
+
+        # Check shape
+        assert F.shape == U.shape, f"[{name}] Force shape {F.shape} != U shape {U.shape}"
+
+        # Check traceless
+        for mu in range(4):
+            trace = torch.einsum("...ii->...", F[mu])
+            assert torch.allclose(
+                trace, torch.zeros_like(trace), atol=1e-12
+            ), f"[{name}] Force not traceless at mu={mu}"
+
+        # Check Hermitian: F = F^dag
+        for mu in range(4):
+            assert torch.allclose(
+                F[mu], F[mu].conj().transpose(-1, -2), atol=1e-12
+            ), f"[{name}] Force not Hermitian at mu={mu}"
+
+        # Check finite
+        assert torch.all(torch.isfinite(F)), f"[{name}] Force has non-finite values"
