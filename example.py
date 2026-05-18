@@ -7,7 +7,7 @@ U = torch.eye(3, dtype=torch.cdouble).expand(4, 2, 2, 2, 2, 3, 3)
 
 n_traj = 100000
 beta = 6.0
-mass = 0.1
+mass = -0.5
 
 plaquette_averages = np.zeros(n_traj)
 
