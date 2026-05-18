@@ -3,10 +3,11 @@ import torch
 
 from HMCpy import hmc_step, plaquette_average, reunitarize
 
-U = torch.eye(3, dtype=torch.cdouble).expand(4, 8, 8, 8, 16, 3, 3)
+U = torch.eye(3, dtype=torch.cdouble).expand(4, 2, 2, 2, 2, 3, 3)
 
 n_traj = 100000
 beta = 6.0
+mass = 0.1
 
 plaquette_averages = np.zeros(n_traj)
 
@@ -17,6 +18,9 @@ for traj in range(n_traj):
         n_steps=20,
         step_size=0.1,
         integrator="omf4",
+        dynamic=True,
+        mass_parameter=mass,
+        csw=1.0,
     )
 
     plaquette_averages[traj] = plaquette_average(U).item()
@@ -24,4 +28,7 @@ for traj in range(n_traj):
 
     if traj % 20 == 0:
         U = reunitarize(U)
-        np.savetxt(f"plaquettes_beta{beta}.dat", plaquette_averages[: traj + 1])
+        np.savetxt(
+            f"plaquettes_beta{beta}_mass{mass}.dat",
+            plaquette_averages[: traj + 1],
+        )
