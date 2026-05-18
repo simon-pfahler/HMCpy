@@ -19,11 +19,13 @@ from test.utils import (
 )
 from typing import Callable
 
+from qcd_ml.base.operations import v_spin_const_transform
+
 from HMCpy.fermion import pseudofermion_action
 from HMCpy.utility import gell_mann_matrices
 from src.HMCpy.fermion import (
     apply_DDdag_inv,
-    apply_gamma5,
+    gamma5,
     wilson_clover_fermion_force,
 )
 
@@ -50,7 +52,11 @@ def _numerical_force_comp(
 
     def solve_DDdag(phi_in, D):
         def DDdag_op(psi):
-            return D(apply_gamma5(D(apply_gamma5(psi))))
+            return D(
+                v_spin_const_transform(
+                    gamma5, D(v_spin_const_transform(gamma5, psi))
+                )
+            )
 
         chi, _ = GMRES(
             DDdag_op, phi_in, torch.zeros_like(phi_in), **(GMRES_kwargs or {})
@@ -88,7 +94,11 @@ def _autograd_force_comp(
         D = D_factory(U_in)
 
         def DDdag_op(psi):
-            return D(apply_gamma5(D(apply_gamma5(psi))))
+            return D(
+                v_spin_const_transform(
+                    gamma5, D(v_spin_const_transform(gamma5, psi))
+                )
+            )
 
         chi = conjugate_gradient(DDdag_op, phi, **(CG_kwargs or {}))
         return pseudofermion_action(phi, chi).real
@@ -329,18 +339,12 @@ class TestCloverFermion:
             )
             ana = _analytic_force_comp(F, mu, site, a)
 
-            print(
-                f"[{name}] num={num:.6e}, aut={aut:.6e}, ana={ana:.6e} (a={a})"
-            )
-            continue
-
             assert num == pytest.approx(
                 ana, abs=1e-6, rel=1e-2
             ), f"[{name}] num={num:.6e} != ana={ana:.6e} (a={a})"
             assert aut == pytest.approx(
                 ana, abs=1e-6, rel=1e-2
             ), f"[{name}] aut={aut:.6e} != ana={ana:.6e} (a={a})"
-        assert False, "X"
 
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]

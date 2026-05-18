@@ -12,6 +12,7 @@ from typing import Callable
 
 import torch
 from qcd_ml.base.hop import v_hop
+from qcd_ml.base.operations import v_spin_const_transform
 from qcd_ml.qcd.dirac import gamma as gamma_list
 from qcd_ml.util.solver import GMRES
 
@@ -19,21 +20,6 @@ from .utility import gell_mann_matrices
 
 gamma = torch.stack(gamma_list)
 gamma5 = gamma[0] @ gamma[1] @ gamma[2] @ gamma[3]
-
-
-def apply_gamma5(psi: torch.Tensor) -> torch.Tensor:
-    """
-    Apply gamma_5 to a spinor field.
-
-    Parameters
-    ----------
-    psi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc]
-
-    Returns
-    -------
-    gamma5 @ psi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc]
-    """
-    return torch.einsum("ij,...jc->...ic", gamma5, psi)
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +52,9 @@ def apply_DDdag_inv(
     def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
         """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
         # D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity
-        gamma5_psi = apply_gamma5(psi)
+        gamma5_psi = v_spin_const_transform(gamma5, psi)
         D_gamma5_psi = D(gamma5_psi)
-        Ddag_psi = apply_gamma5(D_gamma5_psi)
+        Ddag_psi = v_spin_const_transform(gamma5, D_gamma5_psi)
         return D(Ddag_psi)
 
     chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
@@ -127,7 +113,9 @@ def wilson_fermion_force(
 
     eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype, device=U.device)
 
-    Ddag_psi = apply_gamma5(D(apply_gamma5(psi.clone())))
+    Ddag_psi = v_spin_const_transform(
+        gamma5, D(v_spin_const_transform(gamma5, psi.clone()))
+    )
 
     zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
     zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
@@ -196,7 +184,9 @@ def wilson_clover_fermion_force(
 
     gens = 0.5 * gell_mann_matrices
 
-    Ddag_psi = apply_gamma5(D(apply_gamma5(psi.clone())))
+    Ddag_psi = v_spin_const_transform(
+        gamma5, D(v_spin_const_transform(gamma5, psi.clone()))
+    )
 
     # Compute sigma_{μν} = 1/2 [γ_μ, γ_ν]
     sigma_mn = torch.zeros((4, 4, 4, 4), dtype=torch.cdouble, device=U.device)
@@ -503,9 +493,11 @@ def wilson_clover_fermion_force(
             )
 
     # Combine generator contributions with T_i matrices
-    F_clover = torch.einsum("icd,im...->m...cd", gens, f_clover)
+    F_clover = torch.einsum(
+        "icd,im...->m...cd", gens, f_clover.imag.to(torch.cdouble)
+    )
 
     # Combine Wilson and clover forces
-    F_total = F_wilson + F_clover
+    F_total = F_wilson + csw / 8 * F_clover
 
     return F_total
