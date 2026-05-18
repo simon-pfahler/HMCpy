@@ -235,19 +235,19 @@ def wilson_clover_fermion_force(
         """
         result = field.clone()
 
-        if p == 4:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, nu, -nudir, result)
-        if p == 3:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, mu, -mudir, result)
-        if p == 2:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
-        result = v_hop(U, nu, nudir, result)
-        if p == 1:
+        if p == 0:
             result = torch.einsum("cd,...d->...c", gens[i], result)
         result = v_hop(U, mu, mudir, result)
-        if p == 0:
+        if p == 1:
+            result = torch.einsum("cd,...d->...c", gens[i], result)
+        result = v_hop(U, nu, nudir, result)
+        if p == 2:
+            result = torch.einsum("cd,...d->...c", gens[i], result)
+        result = v_hop(U, mu, -mudir, result)
+        if p == 3:
+            result = torch.einsum("cd,...d->...c", gens[i], result)
+        result = v_hop(U, nu, -nudir, result)
+        if p == 4:
             result = torch.einsum("cd,...d->...c", gens[i], result)
 
         return result
@@ -260,107 +260,246 @@ def wilson_clover_fermion_force(
         (8, 4, *lattice_dims), dtype=torch.cdouble, device=U.device
     )
 
-    for i in range(8):  # loop over generators
-        for sigma in range(4):  # loop over direction σ
-            sigma_P_total = torch.zeros_like(Ddag_psi)
-            for mu in range(4):  # loop over direction μ
-                if mu == sigma:
-                    continue
+    # contributions with no offset
+    for i in range(8):
+        for sigma in range(4):
+            contrib = torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, 1, 1, 4, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, 1, -1, 0, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib += torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, 1, 1, 0, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, -1, 1, 4, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.einsum(
+                "...sc,...sc->...", psi.conj(), contrib
+            )
 
-                sigma_sigma_mu = sigma_mn[sigma, mu]
+    # contributions with offset mu
+    for i in range(8):
+        for sigma in range(4):
+            contrib = torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, 1, -1, 3, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib += torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, -1, 1, 1, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.einsum(
+                "m...->...",
+                torch.stack(
+                    [
+                        torch.roll(e, -1, mu)
+                        for mu, e in enumerate(
+                            torch.einsum(
+                                "...sc,m...sc->m...", psi.conj(), contrib
+                            )
+                        )
+                    ]
+                ),
+            )
 
-                # p=0: P_{-σ,-μ,i}^{(0)} - P_{-σ,μ,i}^{(0)}
-                P_total = compute_P(sigma, mu, -1, -1, 0, i, Ddag_psi)
-                P_total -= compute_P(sigma, mu, -1, 1, 0, i, Ddag_psi)
+    # contributions with offset -mu
+    for i in range(8):
+        for sigma in range(4):
+            contrib = -torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, 1, 1, 3, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, 1, 1, 1, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.einsum(
+                "m...->...",
+                torch.stack(
+                    [
+                        torch.roll(e, 1, mu)
+                        for mu, e in enumerate(
+                            torch.einsum(
+                                "...sc,m...sc->m...", psi.conj(), contrib
+                            )
+                        )
+                    ]
+                ),
+            )
 
-                # p=1 (a): P_{μ,-σ,i}^{(1)}(z+μ) - P_{-μ,-σ,i}^{(1)}(z-μ)
-                P_total += torch.roll(
-                    compute_P(mu, sigma, 1, -1, 1, i, Ddag_psi),
-                    -1,
-                    dims=[mu + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(mu, sigma, -1, -1, 1, i, Ddag_psi),
-                    1,
-                    dims=[mu + 1],
-                )
+    # contributions with offset sigma
+    for i in range(8):
+        for sigma in range(4):
+            contrib = torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, -1, 1, 1, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, -1, -1, 3, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib += torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, 1, -1, 3, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, -1, -1, 1, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.roll(
+                torch.einsum("...sc,...sc->...", psi.conj(), contrib), -1, sigma
+            )
 
-                # p=1 (b): P_{σ,-μ,i}^{(1)}(z+σ) - P_{σ,μ,i}^{(1)}(z+σ)
-                P_total += torch.roll(
-                    compute_P(sigma, mu, 1, -1, 1, i, Ddag_psi),
-                    -1,
-                    dims=[sigma + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(sigma, mu, 1, 1, 1, i, Ddag_psi),
-                    -1,
-                    dims=[sigma + 1],
-                )
+    # contributions with offset sigma+mu
+    for i in range(8):
+        for sigma in range(4):
+            contrib = torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, -1, -1, 2, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib += torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, -1, -1, 2, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.einsum(
+                "m...->...",
+                torch.stack(
+                    [
+                        torch.roll(e, [-1, -1], [sigma, mu])
+                        for mu, e in enumerate(
+                            torch.einsum(
+                                "...sc,m...sc->m...", psi.conj(), contrib
+                            )
+                        )
+                    ]
+                ),
+            )
 
-                # p=2 (a): P_{μ,σ,i}^{(2)}(z+σ+μ) - P_{-μ,σ,i}^{(2)}(z+σ-μ)
-                P_total += torch.roll(
-                    compute_P(mu, sigma, 1, 1, 2, i, Ddag_psi),
-                    [-1, -1],
-                    dims=[sigma + 1, mu + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(mu, sigma, -1, 1, 2, i, Ddag_psi),
-                    [-1, 1],
-                    dims=[sigma + 1, mu + 1],
-                )
-
-                # p=2 (b): P_{σ,μ,i}^{(2)}(z+σ+μ) - P_{σ,-μ,i}^{(2)}(z+σ-μ)
-                P_total += torch.roll(
-                    compute_P(sigma, mu, 1, 1, 2, i, Ddag_psi),
-                    [-1, -1],
-                    dims=[sigma + 1, mu + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(sigma, mu, 1, -1, 2, i, Ddag_psi),
-                    [-1, 1],
-                    dims=[sigma + 1, mu + 1],
-                )
-
-                # p=3 (a): P_{-μ,σ,i}^{(3)}(z+σ) - P_{μ,σ,i}^{(3)}(z+σ)
-                P_total += torch.roll(
-                    compute_P(mu, sigma, -1, 1, 3, i, Ddag_psi),
-                    -1,
-                    dims=[sigma + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(mu, sigma, 1, 1, 3, i, Ddag_psi),
-                    -1,
-                    dims=[sigma + 1],
-                )
-
-                # p=3 (b): P_{-σ,μ,i}^{(3)}(z+μ) - P_{-σ,-μ,i}^{(3)}(z-μ)
-                P_total += torch.roll(
-                    compute_P(sigma, mu, -1, 1, 3, i, Ddag_psi),
-                    -1,
-                    dims=[mu + 1],
-                )
-                P_total -= torch.roll(
-                    compute_P(sigma, mu, -1, -1, 3, i, Ddag_psi),
-                    1,
-                    dims=[mu + 1],
-                )
-
-                # p=4: P_{μ,-σ,i}^{(4)} - P_{-μ,-σ,i}^{(4)}
-                P_total += compute_P(mu, sigma, 1, -1, 4, i, Ddag_psi)
-                P_total -= compute_P(mu, sigma, -1, -1, 4, i, Ddag_psi)
-
-                # Apply sigma_{σμ} to spin index
-                sigma_P_total += torch.einsum(
-                    "st,...t c->...s c", sigma_sigma_mu, P_total
-                )
-
-            # Contract with psi^dag and take imaginary part
-            f_clover[i, sigma] -= (
-                csw
-                / 8
-                * torch.einsum(
-                    "...sc,...sc->...", psi.conj(), sigma_P_total
-                ).imag.to(torch.cdouble)
+    # contributions with offset sigma-mu
+    for i in range(8):
+        for sigma in range(4):
+            contrib = -torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(sigma, mu, -1, 1, 2, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            contrib -= torch.einsum(
+                "mpr,m...rc->m...pc",
+                sigma_mn[sigma],
+                torch.stack(
+                    [
+                        compute_P(mu, sigma, 1, -1, 2, i, Ddag_psi)
+                        for mu in range(4)
+                    ]
+                ),
+            )
+            f_clover[i, sigma] += torch.einsum(
+                "m...->...",
+                torch.stack(
+                    [
+                        torch.roll(e, [-1, 1], [sigma, mu])
+                        for mu, e in enumerate(
+                            torch.einsum(
+                                "...sc,m...sc->m...", psi.conj(), contrib
+                            )
+                        )
+                    ]
+                ),
             )
 
     # Combine generator contributions with T_i matrices
