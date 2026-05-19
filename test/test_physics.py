@@ -71,7 +71,7 @@ class TestPhysics:
         """Cold start plaquettes satisfy P P^dag = I."""
         P = _plaquette(cold_start(), mu, nv)
         eye = torch.eye(NC, dtype=dtype).expand_as(P)
-        PdagP = P @ P.conj().transpose(-1, -2)
+        PdagP = P @ P.adjoint()
         assert torch.allclose(PdagP, eye, atol=1e-12)
 
     @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ class TestPhysics:
         """Hot start plaquettes are in SU(3): P P^dag = I, det(P) = 1."""
         P = _plaquette(hot_start(), mu, nv)
         eye = torch.eye(NC, dtype=dtype).expand_as(P)
-        PdagP = P @ P.conj().transpose(-1, -2)
+        PdagP = P @ P.adjoint()
         assert torch.allclose(PdagP, eye, atol=1e-10)
         assert torch.allclose(
             torch.linalg.det(P).abs(),
@@ -97,7 +97,7 @@ class TestPhysics:
         U = hot_start()
         P_mn = _plaquette(U, mu, nv)
         P_nm = _plaquette(U, nv, mu)
-        assert torch.allclose(P_mn, P_nm.conj().transpose(-1, -2), atol=1e-10)
+        assert torch.allclose(P_mn, P_nm.adjoint(), atol=1e-10)
 
     # --- Gauge force algebraic properties ---
 
@@ -105,7 +105,7 @@ class TestPhysics:
         """Gauge force is Hermitian everywhere."""
         F = gauge_force(hot_start(), beta)
         assert torch.allclose(
-            F - F.conj().transpose(-1, -2), torch.zeros_like(F), atol=1e-11
+            F - F.adjoint(), torch.zeros_like(F), atol=1e-11
         )
 
     def test_force_traceless(self, beta):
@@ -187,7 +187,7 @@ class TestPhysics:
         U_noisy = hot_start() + 0.1 * torch.randn_like(hot_start())
         U_r = reunitarize(U_noisy)
         eye = torch.eye(NC, dtype=dtype).expand_as(U_r)
-        UUdag = U_r @ U_r.conj().transpose(-1, -2)
+        UUdag = U_r @ U_r.adjoint()
         assert torch.allclose(UUdag, eye, atol=1e-10)
 
     def test_reunitarize_det_one(self, seed):
@@ -253,7 +253,7 @@ class TestPhysics:
         F_transformed = gauge_force(U_transformed, beta)
 
         # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
-        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        Omega_dag = Omega_field.adjoint()
         F_expected = torch.zeros_like(F_transformed)
         for mu in range(4):
             F_expected[mu] = torch.einsum(

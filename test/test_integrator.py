@@ -94,7 +94,7 @@ class TestIntegrator:
         """exp(i * eps * P) * U remains in SU(3)."""
         U_new = exp_update_U(hot_start(), random_momenta(hot_start()), 0.1)
         eye = torch.eye(NC, dtype=dtype).expand_as(U_new)
-        UUdag = U_new @ U_new.conj().transpose(-1, -2)
+        UUdag = U_new @ U_new.adjoint()
         assert torch.allclose(UUdag, eye, atol=1e-10)
         assert torch.allclose(
             torch.linalg.det(U_new).abs(),
@@ -109,5 +109,5 @@ class TestIntegrator:
             hot_start(), random_momenta(hot_start()), 5, lambda U: self._MD_force(U, beta), 0.05
         )
         eye = torch.eye(NC, dtype=dtype).expand_as(U_new)
-        UUdag = U_new @ U_new.conj().transpose(-1, -2)
+        UUdag = U_new @ U_new.adjoint()
         assert torch.allclose(UUdag, eye, atol=1e-8)

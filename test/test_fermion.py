@@ -176,9 +176,7 @@ class TestFermion:
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
 
-            chi = torch.randn(
-                L, L, L, L, 4, NC, dtype=dtype
-            ) + 1j * torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            chi = torch.randn(L, L, L, L, 4, NC, dtype=torch.complex128)
             chi = chi / chi.norm()
             psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
             F = wilson_fermion_force(U, psi, D)
@@ -251,7 +249,7 @@ class TestFermion:
         # Check Hermitian: F = F^dag
         for mu in range(4):
             assert torch.allclose(
-                F[mu], F[mu].conj().transpose(-1, -2), atol=1e-12
+                F[mu], F[mu].adjoint(), atol=1e-12
             ), f"Force not Hermitian at mu={mu}"
 
         # Check traceless
@@ -368,7 +366,7 @@ class TestGaugeTransformation:
 
         # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
         F_expected = torch.zeros_like(F_transformed)
-        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        Omega_dag = Omega_field.adjoint()
         for mu in range(4):
             F_expected[mu] = torch.einsum(
                 "...ab,...bc,...cd->...ad",
@@ -427,7 +425,7 @@ class TestGaugeTransformation:
 
         # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
         F_expected = torch.zeros_like(F_transformed)
-        Omega_dag = Omega_field.conj().transpose(-1, -2)
+        Omega_dag = Omega_field.adjoint()
         for mu in range(4):
             F_expected[mu] = torch.einsum(
                 "...ab,...bc,...cd->...ad",

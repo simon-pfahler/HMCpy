@@ -209,7 +209,7 @@ def apply_gauge_transform(U: torch.Tensor, Omega: torch.Tensor) -> torch.Tensor:
         Transformed gauge field
     """
     U_transformed = torch.zeros_like(U)
-    Omega_dag = Omega.conj().transpose(-1, -2)
+    Omega_dag = Omega.adjoint()
     for mu in range(4):
         Omega_shifted = torch.roll(Omega, -1, dims=[mu])
         Omega_shifted_dag = torch.roll(Omega_dag, -1, dims=[mu])

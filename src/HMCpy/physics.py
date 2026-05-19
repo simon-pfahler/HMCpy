@@ -36,8 +36,8 @@ def _plaquette(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
     Umu_shift_nu = torch.roll(Umu, -1, dims=nu)  # U_mu(x + nu_hat)
 
     P = torch.matmul(Umu, Unu_shift_mu)
-    P = torch.matmul(P, Umu_shift_nu.conj().transpose(-1, -2))
-    P = torch.matmul(P, Unu.conj().transpose(-1, -2))
+    P = torch.matmul(P, Umu_shift_nu.adjoint())
+    P = torch.matmul(P, Unu.adjoint())
     return P
 
 
@@ -56,15 +56,15 @@ def _staple(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
     # Forward staple: U_nu(x+mu) . U_mu(x+nu)^dag . U_nu(x)^dag
     Unu_fwd = torch.roll(Unu, -1, dims=mu)
     Umu_fwd = torch.roll(Umu, -1, dims=nu)
-    fwd = torch.matmul(Unu_fwd, Umu_fwd.conj().transpose(-1, -2))
-    fwd = torch.matmul(fwd, Unu.conj().transpose(-1, -2))
+    fwd = torch.matmul(Unu_fwd, Umu_fwd.adjoint())
+    fwd = torch.matmul(fwd, Unu.adjoint())
 
     # Backward staple: U_nu(x+mu-nu)^dag . U_mu(x-nu)^dag . U_nu(x-nu)
     Unu_bwd = torch.roll(Unu, 1, dims=nu)
     Unu_bwd_mu = torch.roll(Unu_bwd, -1, dims=mu)
     Umu_bwd = torch.roll(Umu, 1, dims=nu)
     bwd = torch.matmul(
-        Unu_bwd_mu.conj().transpose(-1, -2), Umu_bwd.conj().transpose(-1, -2)
+        Unu_bwd_mu.adjoint(), Umu_bwd.adjoint()
     )
     bwd = torch.matmul(bwd, Unu_bwd)
 
@@ -161,7 +161,7 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
 
         Q = torch.matmul(U[mu], sigma)
 
-        A = Q - Q.conj().transpose(-1, -2)
+        A = Q - Q.adjoint()
         A -= (torch.einsum("...ii->...", A) / 3).unsqueeze(-1).unsqueeze(
             -1
         ) * eye

@@ -22,7 +22,7 @@ class TestMonteCarlo:
         torch.manual_seed(seed)
         P = sample_momenta(cold_start())
         assert torch.allclose(
-            P - P.conj().transpose(-1, -2), torch.zeros_like(P), atol=1e-12
+            P - P.adjoint(), torch.zeros_like(P), atol=1e-12
         )
 
     def test_momenta_traceless(self, seed):
