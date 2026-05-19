@@ -113,7 +113,9 @@ def _analytic_force_comp(
     return -(2 * torch.trace(su3_generators[a] @ F[(mu,) + site])).real.item()
 
 
-class TestFermion:
+class TestFermionAction:
+    """Tests for pseudofermion action."""
+
     @pytest.mark.parametrize("U_fn", [cold_start, hot_start])
     def test_pseudofermion_action_pos_finite(self, U_fn, mass, L, NC, dtype):
         """Pseudofermion action is positive and finite."""
@@ -163,6 +165,10 @@ class TestFermion:
         S2 = pseudofermion_action(2 * phi, chi2)
 
         assert S2.item() / S1.item() == pytest.approx(4.0, rel=1e-5)
+
+
+class TestFermionForce:
+    """Tests for fermion forces."""
 
     @pytest.mark.parametrize("fermion_type", ["wilson", "clover"])
     @pytest.mark.parametrize("U_fn", [cold_start, hot_start])
@@ -259,10 +265,6 @@ class TestFermion:
                 trace, torch.zeros_like(trace), atol=1e-12
             ), f"Force not traceless at mu={mu}"
 
-
-class TestCloverFermion:
-    """Tests for Wilson-Clover fermion force."""
-
     @pytest.mark.parametrize("U_fn", [cold_start, hot_start])
     def test_clover_force_matches_wilson_at_csw_zero(
         self, U_fn, mass, L, NC, dtype
@@ -329,11 +331,9 @@ class TestGaugeTransformation:
     def test_wilson_fermion_force_transforms_correctly(
         self, mass, L, NC, dtype
     ):
-        r"""Wilson fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-
-        U = hot_start()
-
+        r"""Wilson fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)."""
         torch.manual_seed(12346)
+        U = hot_start()
         m = mass
 
         D = dirac_wilson(U, mass_parameter=m)
@@ -364,7 +364,7 @@ class TestGaugeTransformation:
             U_transformed, psi_transformed, D_transformed
         )
 
-        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
+        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)
         F_expected = torch.zeros_like(F_transformed)
         Omega_dag = Omega_field.adjoint()
         for mu in range(4):
@@ -386,8 +386,7 @@ class TestGaugeTransformation:
     def test_wilson_clover_fermion_force_transforms_correctly(
         self, mass, L, NC, dtype
     ):
-        r"""Wilson-Clover fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-
+        r"""Wilson-Clover fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)."""
         torch.manual_seed(12347)
         U = hot_start()
         m = mass
@@ -423,7 +422,7 @@ class TestGaugeTransformation:
             U_transformed, psi_transformed, D_transformed, csw
         )
 
-        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)
+        # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)
         F_expected = torch.zeros_like(F_transformed)
         Omega_dag = Omega_field.adjoint()
         for mu in range(4):
