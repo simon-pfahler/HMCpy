@@ -1,5 +1,7 @@
 # HMCpy - Hybrid Monte Carlo for Lattice QCD
 
+[![Test](https://github.com/simon-pfahler/HMCpy/actions/workflows/test.yml/badge.svg)](https://github.com/simon-pfahler/HMCpy/actions/workflows/test.yml)
+
 A PyTorch-based Hybrid Monte Carlo (HMC) implementation for SU(3) lattice gauge theory with optional dynamical Wilson/Wilson-clover fermions. GPU-accelerated via PyTorch CUDA support.
 
 ## Features
