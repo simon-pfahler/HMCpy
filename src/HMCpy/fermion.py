@@ -245,7 +245,6 @@ def wilson_clover_fermion_force(
     lattice_dims = [psi.shape[d] for d in range(4)]
 
     # Initialize force accumulation for each generator and direction
-    # f_clover[i, sigma, x] is a scalar (the coefficient for T_i at direction sigma and site x)
     f_clover = torch.zeros(
         (8, 4, *lattice_dims), dtype=torch.cdouble, device=U.device
     )

@@ -15,14 +15,17 @@ One HMC trajectory:
   2. (If dynamical fermions) Sample phi and compute S_pf_old
   3. Run symplectic MD trajectory  (U, P) -> (U', P')
   4. Metropolis accept/reject on delta_H = H_new - H_old
-
-Conventions match qcd_ml: U shape [4, Lx, Ly, Lz, Lt, Nc, Nc].
 """
 
 import torch
 from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
-from .fermion import apply_DDdag_inv, pseudofermion_action, wilson_clover_fermion_force, wilson_fermion_force
+from .fermion import (
+    apply_DDdag_inv,
+    pseudofermion_action,
+    wilson_clover_fermion_force,
+    wilson_fermion_force,
+)
 from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
@@ -180,6 +183,7 @@ def hmc_step(
                 return gauge_force(U, beta) + wilson_clover_fermion_force(
                     U, psi, D, csw
                 )
+
         else:
 
             def force(U):
