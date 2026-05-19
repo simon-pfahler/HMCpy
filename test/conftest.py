@@ -1,15 +1,15 @@
 """
-utils.py -- Shared utility functions and constants for tests.
+conftest.py -- Shared fixtures and utilities for pytest tests.
 
 This module provides shared test utilities to avoid code duplication across test files.
 
-Shared constants:
-  - SEED: Random seed for reproducibility (42)
+Shared fixtures:
+  - seed: Random seed for reproducibility (42)
   - L: Lattice side length (2)
   - NC: Number of colors for SU(Nc) (3)
-  - DTYPE: Data type for tensors (torch.complex128)
-  - BETA: Gauge coupling parameter (6.0)
-  - MASS: Fermion mass parameter (-0.2)
+  - dtype: Data type for tensors (torch.complex128)
+  - beta: Gauge coupling parameter (6.0)
+  - mass: Fermion mass parameter (-0.2)
 
 Shared functions:
   - cold_start: Generate cold start gauge field (identity links)
@@ -18,15 +18,44 @@ Shared functions:
   - conjugate_gradient: CG solver for Hermitian positive-definite systems
 """
 
+import pytest
 import torch
 
-# Shared constants for all tests
-SEED = 42
-L = 2  # lattice side length
-NC = 3  # SU(3)
-DTYPE = torch.complex128
-BETA = 6.0  # gauge coupling
-MASS = -0.2  # fermion mass parameter
+
+@pytest.fixture
+def seed():
+    """Random seed for reproducibility."""
+    return 42
+
+
+@pytest.fixture
+def L():
+    """Lattice side length."""
+    return 2
+
+
+@pytest.fixture
+def NC():
+    """Number of colors for SU(Nc)."""
+    return 3
+
+
+@pytest.fixture
+def dtype():
+    """Data type for tensors."""
+    return torch.complex128
+
+
+@pytest.fixture
+def beta():
+    """Gauge coupling parameter."""
+    return 6.0
+
+
+@pytest.fixture
+def mass():
+    """Fermion mass parameter."""
+    return -0.2
 
 
 # ---------------------------------------------------------------------------
@@ -34,16 +63,16 @@ MASS = -0.2  # fermion mass parameter
 # ---------------------------------------------------------------------------
 
 
-def cold_start(L=L, Nc=NC) -> torch.Tensor:
+def cold_start(L=2, Nc=3) -> torch.Tensor:
     """Generate a cold start gauge field with all links = identity."""
-    return torch.eye(Nc, dtype=DTYPE).expand(4, L, L, L, L, Nc, Nc).clone()
+    return torch.eye(Nc, dtype=torch.complex128).expand(4, L, L, L, L, Nc, Nc).clone()
 
 
-def hot_start(L=L, Nc=NC, seed=SEED) -> torch.Tensor:
+def hot_start(L=2, Nc=3, seed=42) -> torch.Tensor:
     """Generate a hot start gauge field with random SU(3) links via QR decomposition."""
     g = torch.Generator()
     g.manual_seed(seed)
-    X = torch.randn(4, L, L, L, L, Nc, Nc, dtype=DTYPE, generator=g)
+    X = torch.randn(4, L, L, L, L, Nc, Nc, dtype=torch.complex128, generator=g)
     Q, _ = torch.linalg.qr(X)
     det = torch.linalg.det(Q)
     phase = det / det.abs()
@@ -56,7 +85,7 @@ def hot_start(L=L, Nc=NC, seed=SEED) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 
 
-def random_momenta(U: torch.Tensor, seed=SEED) -> torch.Tensor:
+def random_momenta(U: torch.Tensor, seed=42) -> torch.Tensor:
     """Generate random traceless Hermitian momenta."""
     from HMCpy.monte_carlo import sample_momenta
 
@@ -136,11 +165,11 @@ def random_SU3(seed: int | None = None) -> torch.Tensor:
         g.manual_seed(seed)
     else:
         g = None
-    X = torch.randn(3, 3, dtype=DTYPE, generator=g)
+    X = torch.randn(3, 3, dtype=torch.complex128, generator=g)
     Q, _ = torch.linalg.qr(X)
     det = torch.linalg.det(Q)
     phase = det / det.abs()
-    phase_root = torch.exp(torch.log(phase + 1e-30j) / NC)
+    phase_root = torch.exp(torch.log(phase + 1e-30j) / 3)
     return (Q / phase_root).detach()
 
 

@@ -8,11 +8,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from test.utils import (
-    DTYPE,
-    MASS,
-    NC,
-    L,
+from test.conftest import (
     cold_start,
     conjugate_gradient,
     hot_start,
@@ -107,7 +103,7 @@ def _autograd_force_comp(
     link_grad = (
         grad_full[idx]
         if grad_full is not None
-        else torch.zeros(NC, NC, dtype=DTYPE)
+        else torch.zeros(3, 3, dtype=torch.complex128)
     )
 
     return (link_grad.conj() * (1j * gen @ U[idx])).sum().real.item()
@@ -126,15 +122,15 @@ class TestFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_pseudofermion_action_pos_finite(self, U_fn, name):
+    def test_pseudofermion_action_pos_finite(self, U_fn, name, mass, L, NC, dtype):
         """Pseudofermion action is positive and finite."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = U_fn()
-        m = MASS
+        m = mass
         D = dirac_wilson(U, mass_parameter=m)
         # Normalized uniform phi: norm = sqrt(L^4 * 4 * NC) for ones
-        phi = torch.ones(L, L, L, L, 4, NC, dtype=DTYPE)
+        phi = torch.ones(L, L, L, L, 4, NC, dtype=dtype)
         phi_norm = phi.norm()
         phi = phi / phi_norm
         chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
@@ -150,25 +146,25 @@ class TestFermion:
                 1 / m**2, abs=1e-2
             ), f"[{name}] Expected 1/m^2=100, got {S.item()}"
 
-    def test_pseudofermion_action_real(self):
+    def test_pseudofermion_action_real(self, mass, L, NC, dtype):
         """Pseudofermion action is real for Hermitian DDdagger."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = cold_start()
-        D = dirac_wilson(U, mass_parameter=MASS)
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        D = dirac_wilson(U, mass_parameter=mass)
+        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
 
         assert (pseudofermion_action(phi, chi)).isreal()
         assert torch.isfinite(pseudofermion_action(phi, chi))
 
-    def test_pseudofermion_action_scales_quadratically(self):
+    def test_pseudofermion_action_scales_quadratically(self, mass, L, NC, dtype):
         """Action scales as phi^2 (S ~ phi^dag chi, chi ~ phi)."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
         U = cold_start()
-        D = dirac_wilson(U, mass_parameter=MASS)
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        D = dirac_wilson(U, mass_parameter=mass)
+        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
 
         chi1 = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
         chi2 = apply_DDdag_inv(2 * phi, D, GMRES_kwargs=GMRES_OPTS)
@@ -181,7 +177,7 @@ class TestFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_fermion_force_matches_gradient(self, U_fn, name):
+    def test_fermion_force_matches_gradient(self, U_fn, name, mass, L, NC, dtype):
         """Wilson fermion force matches numerical and autograd gradients."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -189,10 +185,10 @@ class TestFermion:
 
         torch.manual_seed(123)
         U = U_fn()
-        D = dirac_wilson(U, mass_parameter=MASS)
+        D = dirac_wilson(U, mass_parameter=mass)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE) + 1j * torch.randn(
-            L, L, L, L, 4, NC, dtype=DTYPE
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype) + 1j * torch.randn(
+            L, L, L, L, 4, NC, dtype=dtype
         )
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
@@ -203,7 +199,7 @@ class TestFermion:
         aut_kw = {"maxiter": 2000, "tol": 1e-10}
 
         def D_factory(U_in):
-            return dirac_wilson(U_in, mass_parameter=MASS)
+            return dirac_wilson(U_in, mass_parameter=mass)
 
         for a in range(8):
             num = _numerical_force_comp(
@@ -224,7 +220,7 @@ class TestFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_wilson_force_is_hermitian(self, U_fn, name):
+    def test_wilson_force_is_hermitian(self, U_fn, name, mass, L, NC, dtype):
         """Wilson fermion force is Hermitian: F = F^dag."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -232,9 +228,9 @@ class TestFermion:
 
         torch.manual_seed(100)
         U = U_fn()
-        D = dirac_wilson(U, mass_parameter=MASS)
+        D = dirac_wilson(U, mass_parameter=mass)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_fermion_force(U, psi, D)
@@ -247,7 +243,7 @@ class TestFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_wilson_force_is_traceless(self, U_fn, name):
+    def test_wilson_force_is_traceless(self, U_fn, name, mass, L, NC, dtype):
         """Wilson fermion force is traceless at every link."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -255,9 +251,9 @@ class TestFermion:
 
         torch.manual_seed(101)
         U = U_fn()
-        D = dirac_wilson(U, mass_parameter=MASS)
+        D = dirac_wilson(U, mass_parameter=mass)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_fermion_force(U, psi, D)
@@ -275,7 +271,7 @@ class TestCloverFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_clover_force_matches_wilson_at_csw_zero(self, U_fn, name):
+    def test_clover_force_matches_wilson_at_csw_zero(self, U_fn, name, mass, L, NC, dtype):
         """Wilson-Clover force with csw=0 matches Wilson force."""
         from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
@@ -283,10 +279,10 @@ class TestCloverFermion:
 
         torch.manual_seed(123)
         U = U_fn()
-        m = MASS
+        m = mass
         csw = 0.0
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
 
         # Compute Wilson force
@@ -307,18 +303,18 @@ class TestCloverFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_clover_force_matches_gradient(self, U_fn, name):
+    def test_clover_force_matches_gradient(self, U_fn, name, mass, L, NC, dtype):
         """Wilson-Clover fermion force matches numerical and autograd gradients."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
         torch.manual_seed(456)
         U = U_fn()
-        m = MASS
+        m = mass
         csw = 1.0
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_clover_fermion_force(U, psi, D, csw)
@@ -349,18 +345,18 @@ class TestCloverFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_clover_force_shape_and_properties(self, U_fn, name):
+    def test_clover_force_shape_and_properties(self, U_fn, name, mass, L, NC, dtype):
         """Wilson-Clover force has correct shape and is traceless Hermitian."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
         torch.manual_seed(789)
         U = U_fn()
-        m = MASS
+        m = mass
         csw = 1.5
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_clover_fermion_force(U, psi, D, csw)
@@ -391,18 +387,18 @@ class TestCloverFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_clover_force_is_hermitian(self, U_fn, name):
+    def test_clover_force_is_hermitian(self, U_fn, name, mass, L, NC, dtype):
         """Wilson-Clover fermion force is Hermitian: F = F^dag."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
         torch.manual_seed(790)
         U = U_fn()
-        m = MASS
+        m = mass
         csw = 1.5
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_clover_fermion_force(U, psi, D, csw)
@@ -415,18 +411,18 @@ class TestCloverFermion:
     @pytest.mark.parametrize(
         "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
     )
-    def test_clover_force_is_traceless(self, U_fn, name):
+    def test_clover_force_is_traceless(self, U_fn, name, mass, L, NC, dtype):
         """Wilson-Clover fermion force is traceless at every link."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
         torch.manual_seed(791)
         U = U_fn()
-        m = MASS
+        m = mass
         csw = 1.5
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
         F = wilson_clover_fermion_force(U, psi, D, csw)
@@ -441,9 +437,9 @@ class TestCloverFermion:
 class TestGaugeTransformation:
     """Tests for gauge transformation properties of forces."""
 
-    def test_wilson_fermion_force_transforms_correctly(self):
+    def test_wilson_fermion_force_transforms_correctly(self, mass, L, NC, dtype):
         r"""Wilson fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-        from test.utils import apply_gauge_transform, random_SU3
+        from test.conftest import apply_gauge_transform, random_SU3
 
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -451,11 +447,11 @@ class TestGaugeTransformation:
 
         torch.manual_seed(12346)
         U = hot_start()
-        m = MASS
+        m = mass
 
         D = dirac_wilson(U, mass_parameter=m)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
 
@@ -500,20 +496,20 @@ class TestGaugeTransformation:
                 atol=1e-10,
             ), f"Wilson fermion force at mu={mu} does not transform correctly"
 
-    def test_wilson_clover_fermion_force_transforms_correctly(self):
+    def test_wilson_clover_fermion_force_transforms_correctly(self, mass, L, NC, dtype):
         r"""Wilson-Clover fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-        from test.utils import apply_gauge_transform, random_SU3
+        from test.conftest import apply_gauge_transform, random_SU3
 
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
         torch.manual_seed(12347)
         U = hot_start()
-        m = MASS
+        m = mass
         csw = 1.0
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=DTYPE)
+        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
         psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
 
