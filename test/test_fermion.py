@@ -120,9 +120,9 @@ def _analytic_force_comp(
 
 class TestFermion:
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_pseudofermion_action_pos_finite(self, U_fn, name, mass, L, NC, dtype):
+    def test_pseudofermion_action_pos_finite(self, U_fn, mass, L, NC, dtype):
         """Pseudofermion action is positive and finite."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -138,13 +138,13 @@ class TestFermion:
 
         assert (
             S.item() > 0
-        ), f"[{name}] Action should be positive, got {S.item()}"
-        assert torch.isfinite(S), f"[{name}] Action should be finite"
+        ), f"Action should be positive, got {S.item()}"
+        assert torch.isfinite(S), "Action should be finite"
 
-        if name == "cold":
+        if U_fn.__name__ == "cold_start":
             assert S == pytest.approx(
                 1 / m**2, abs=1e-2
-            ), f"[{name}] Expected 1/m^2=100, got {S.item()}"
+            ), f"Expected 1/m^2=100, got {S.item()}"
 
     def test_pseudofermion_action_real(self, mass, L, NC, dtype):
         """Pseudofermion action is real for Hermitian DDdagger."""
@@ -175,9 +175,9 @@ class TestFermion:
         assert S2.item() / S1.item() == pytest.approx(4.0, rel=1e-5)
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_fermion_force_matches_gradient(self, U_fn, name, mass, L, NC, dtype):
+    def test_fermion_force_matches_gradient(self, U_fn, mass, L, NC, dtype):
         """Wilson fermion force matches numerical and autograd gradients."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -212,15 +212,15 @@ class TestFermion:
 
             assert num == pytest.approx(
                 ana, abs=1e-8, rel=1e-2
-            ), f"[{name}] num={num:.6e} != ana={ana:.6e} (a={a})"
+            ), f"num={num:.6e} != ana={ana:.6e} (a={a})"
             assert aut == pytest.approx(
                 ana, abs=1e-8, rel=1e-2
-            ), f"[{name}] aut={aut:.6e} != ana={ana:.6e} (a={a})"
+            ), f"aut={aut:.6e} != ana={ana:.6e} (a={a})"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_wilson_force_is_hermitian(self, U_fn, name, mass, L, NC, dtype):
+    def test_wilson_force_is_hermitian(self, U_fn, mass, L, NC, dtype):
         """Wilson fermion force is Hermitian: F = F^dag."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -238,12 +238,12 @@ class TestFermion:
         for mu in range(4):
             assert torch.allclose(
                 F[mu], F[mu].conj().transpose(-1, -2), atol=1e-12
-            ), f"[{name}] Wilson force not Hermitian at mu={mu}"
+            ), f"Wilson force not Hermitian at mu={mu}"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_wilson_force_is_traceless(self, U_fn, name, mass, L, NC, dtype):
+    def test_wilson_force_is_traceless(self, U_fn, mass, L, NC, dtype):
         """Wilson fermion force is traceless at every link."""
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -262,16 +262,16 @@ class TestFermion:
             trace = torch.einsum("...ii->...", F[mu])
             assert torch.allclose(
                 trace, torch.zeros_like(trace), atol=1e-12
-            ), f"[{name}] Wilson force not traceless at mu={mu}"
+            ), f"Wilson force not traceless at mu={mu}"
 
 
 class TestCloverFermion:
     """Tests for Wilson-Clover fermion force."""
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_clover_force_matches_wilson_at_csw_zero(self, U_fn, name, mass, L, NC, dtype):
+    def test_clover_force_matches_wilson_at_csw_zero(self, U_fn, mass, L, NC, dtype):
         """Wilson-Clover force with csw=0 matches Wilson force."""
         from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
@@ -298,12 +298,12 @@ class TestCloverFermion:
         # They should be equal
         assert torch.allclose(
             F_wilson, F_clover, atol=1e-12, rtol=1e-12
-        ), f"[{name}] Forces differ by {(F_wilson - F_clover).abs().max().item():.6e}"
+        ), f"Forces differ by {(F_wilson - F_clover).abs().max().item():.6e}"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_clover_force_matches_gradient(self, U_fn, name, mass, L, NC, dtype):
+    def test_clover_force_matches_gradient(self, U_fn, mass, L, NC, dtype):
         """Wilson-Clover fermion force matches numerical and autograd gradients."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
@@ -337,15 +337,15 @@ class TestCloverFermion:
 
             assert num == pytest.approx(
                 ana, abs=1e-6, rel=1e-2
-            ), f"[{name}] num={num:.6e} != ana={ana:.6e} (a={a})"
+            ), f"num={num:.6e} != ana={ana:.6e} (a={a})"
             assert aut == pytest.approx(
                 ana, abs=1e-6, rel=1e-2
-            ), f"[{name}] aut={aut:.6e} != ana={ana:.6e} (a={a})"
+            ), f"aut={aut:.6e} != ana={ana:.6e} (a={a})"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_clover_force_shape_and_properties(self, U_fn, name, mass, L, NC, dtype):
+    def test_clover_force_shape_and_properties(self, U_fn, mass, L, NC, dtype):
         """Wilson-Clover force has correct shape and is traceless Hermitian."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
@@ -364,30 +364,30 @@ class TestCloverFermion:
         # Check shape
         assert (
             F.shape == U.shape
-        ), f"[{name}] Force shape {F.shape} != U shape {U.shape}"
+        ), f"Force shape {F.shape} != U shape {U.shape}"
 
         # Check traceless
         for mu in range(4):
             trace = torch.einsum("...ii->...", F[mu])
             assert torch.allclose(
                 trace, torch.zeros_like(trace), atol=1e-12
-            ), f"[{name}] Force not traceless at mu={mu}"
+            ), f"Force not traceless at mu={mu}"
 
         # Check Hermitian: F = F^dag
         for mu in range(4):
             assert torch.allclose(
                 F[mu], F[mu].conj().transpose(-1, -2), atol=1e-12
-            ), f"[{name}] Force not Hermitian at mu={mu}"
+            ), f"Force not Hermitian at mu={mu}"
 
         # Check finite
         assert torch.all(
             torch.isfinite(F)
-        ), f"[{name}] Force has non-finite values"
+        ), f"Force has non-finite values"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_clover_force_is_hermitian(self, U_fn, name, mass, L, NC, dtype):
+    def test_clover_force_is_hermitian(self, U_fn, mass, L, NC, dtype):
         """Wilson-Clover fermion force is Hermitian: F = F^dag."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
@@ -406,12 +406,12 @@ class TestCloverFermion:
         for mu in range(4):
             assert torch.allclose(
                 F[mu], F[mu].conj().transpose(-1, -2), atol=1e-12
-            ), f"[{name}] Wilson-Clover force not Hermitian at mu={mu}"
+            ), f"Wilson-Clover force not Hermitian at mu={mu}"
 
     @pytest.mark.parametrize(
-        "U_fn, name", [(cold_start, "cold"), (hot_start, "hot")]
+        "U_fn", [cold_start, hot_start]
     )
-    def test_clover_force_is_traceless(self, U_fn, name, mass, L, NC, dtype):
+    def test_clover_force_is_traceless(self, U_fn, mass, L, NC, dtype):
         """Wilson-Clover fermion force is traceless at every link."""
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 
@@ -431,7 +431,7 @@ class TestCloverFermion:
             trace = torch.einsum("...ii->...", F[mu])
             assert torch.allclose(
                 trace, torch.zeros_like(trace), atol=1e-12
-            ), f"[{name}] Wilson-Clover force not traceless at mu={mu}"
+            ), f"Wilson-Clover force not traceless at mu={mu}"
 
 
 class TestGaugeTransformation:

@@ -53,8 +53,8 @@ class TestIntegrator:
     def _HO_update(self, U, P, eps):
         return U + eps * P
 
-    @pytest.mark.parametrize("integrator,name", [(leapfrog, "leapfrog"), (omf4, "omf4")])
-    def test_time_reversibility_HO(self, integrator, name):
+    @pytest.mark.parametrize("integrator", [leapfrog, omf4])
+    def test_time_reversibility_HO(self, integrator):
         """Symplectic integrator is time-reversible for harmonic oscillator."""
         U0, P0 = torch.ones(1, dtype=torch.double), torch.zeros(
             1, dtype=torch.double
@@ -64,10 +64,8 @@ class TestIntegrator:
         assert torch.allclose(U2, U0, atol=1e-9)
         assert torch.allclose(P2, -P0, atol=1e-9)
 
-    @pytest.mark.parametrize(
-        "integrator,name", [(leapfrog, "leapfrog"), (omf4, "omf4")]
-    )
-    def test_time_reversibility_MD(self, integrator, name, beta):
+    @pytest.mark.parametrize("integrator", [leapfrog, omf4])
+    def test_time_reversibility_MD(self, integrator, beta):
         """Symplectic integrator is time-reversible for MD simulation."""
         U0, P0 = hot_start(), random_momenta(hot_start())
         U1, P1 = integrator(U0, P0, 10, lambda U: self._MD_force(U, beta), 1)
@@ -78,8 +76,8 @@ class TestIntegrator:
     # --- Energy conservation (order verification) ---
 
     @pytest.mark.parametrize("integrator,order", [(leapfrog, 2), (omf4, 4)])
-    @pytest.mark.parametrize("use_HO,name", [(True, "HO"), (False, "MD")])
-    def test_energy_drift_order(self, integrator, order, use_HO, name, beta):
+    @pytest.mark.parametrize("use_HO", [True, False])
+    def test_energy_drift_order(self, integrator, order, use_HO, beta):
         """Energy drift scales as O(eps^order) for order-th method."""
         target = 4 if order == 2 else 16
         eps_fine = 0.05 if (order == 2 and use_HO) else (0.4 if use_HO else 0.1)
@@ -89,7 +87,7 @@ class TestIntegrator:
         ratio = dH_coarse / dH_fine
         assert (
             0.67 * target < ratio < 1.5 * target
-        ), f"[{integrator.__name__},{name}] ratio={ratio:.2f}, expected ~{target}"
+        ), f"ratio={ratio:.2f}, expected ~{target}"
 
     # --- SU(3) preservation ---
 
