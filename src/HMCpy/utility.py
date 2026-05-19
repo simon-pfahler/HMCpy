@@ -2,12 +2,12 @@
 utility.py -- Utility functions and constants for HMCpy.
 
 This module provides:
-  - gell_mann_matrices : SU(3) generators (Gell-Mann matrices)
+  - gell_mann_matrices : Gell-Mann matrices
+  - su3_generators : Pre-computed 0.5 * gell_mann_matrices (SU(3) generators)
   - _exp_update_U : SU(3) exponential update for gauge fields
 """
 
 import torch
-
 
 # ---------------------------------------------------------------------------
 # SU(3) generators (Gell-Mann matrices)
@@ -30,6 +30,8 @@ gell_mann_matrices = torch.tensor(
     ),
     dtype=torch.cdouble,
 )
+
+su3_generators = 0.5 * gell_mann_matrices
 
 
 # ---------------------------------------------------------------------------

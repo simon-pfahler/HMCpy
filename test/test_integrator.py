@@ -1,12 +1,7 @@
 """Tests for HMCpy.integrator module: time-reversibility, energy conservation, SU(3) preservation."""
 
-import os
-import sys
-
 import pytest
 import torch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from test.conftest import hot_start, random_momenta
 

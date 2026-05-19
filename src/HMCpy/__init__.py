@@ -28,7 +28,7 @@ from .physics import (
     reunitarize,
     wilson_gauge_action,
 )
-from .utility import gell_mann_matrices
+from .utility import gell_mann_matrices, su3_generators
 
 __all__ = [
     # physics
@@ -48,6 +48,7 @@ __all__ = [
     "omf4",
     # utility
     "gell_mann_matrices",
+    "su3_generators",
     # monte_carlo
     "sample_momenta",
     "metropolis_accept",

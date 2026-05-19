@@ -1,12 +1,7 @@
 """Tests for HMCpy.physics module: gauge action, plaquette, force, reunitarize, energy."""
 
-import os
-import sys
-
 import pytest
 import torch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from test.conftest import (
     cold_start,

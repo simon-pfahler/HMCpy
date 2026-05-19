@@ -1,12 +1,7 @@
 """Tests for HMCpy.fermion module: pseudofermion action, derivatives, force."""
 
-import os
-import sys
-
 import pytest
 import torch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from test.conftest import (
     cold_start,
@@ -17,13 +12,14 @@ from typing import Callable
 
 from qcd_ml.base.operations import v_spin_const_transform
 
-from HMCpy.fermion import pseudofermion_action
-from HMCpy.utility import gell_mann_matrices
-from src.HMCpy.fermion import (
+from HMCpy.fermion import (
     apply_DDdag_inv,
     gamma5,
+    pseudofermion_action,
     wilson_clover_fermion_force,
+    wilson_fermion_force,
 )
+from HMCpy.utility import gell_mann_matrices
 
 GMRES_OPTS = {"maxiter": 1000, "eps": 1e-10, "inner_iter": 10}
 
@@ -184,7 +180,7 @@ class TestFermion:
         """Fermion force matches numerical and autograd gradients."""
         if fermion_type == "wilson":
             from qcd_ml.qcd.dirac import dirac_wilson
-            from src.HMCpy.fermion import wilson_fermion_force
+            from HMCpy.fermion import wilson_fermion_force
             torch.manual_seed(123)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
@@ -210,7 +206,7 @@ class TestFermion:
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
             psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            from src.HMCpy.fermion import wilson_clover_fermion_force
+            from HMCpy.fermion import wilson_clover_fermion_force
             F = wilson_clover_fermion_force(U, psi, D, csw)
 
             def D_factory(U_in):
@@ -248,7 +244,7 @@ class TestFermion:
         """Fermion force has correct properties (Hermitian and traceless)."""
         if fermion_type == "wilson":
             from qcd_ml.qcd.dirac import dirac_wilson
-            from src.HMCpy.fermion import wilson_fermion_force
+            from HMCpy.fermion import wilson_fermion_force
             torch.manual_seed(100)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
@@ -258,7 +254,7 @@ class TestFermion:
             F = wilson_fermion_force(U, psi, D)
         else:  # clover
             from qcd_ml.qcd.dirac import dirac_wilson_clover
-            from src.HMCpy.fermion import wilson_clover_fermion_force
+            from HMCpy.fermion import wilson_clover_fermion_force
             torch.manual_seed(790)
             U = U_fn()
             csw = 1.5
@@ -292,7 +288,7 @@ class TestCloverFermion:
         """Wilson-Clover force with csw=0 matches Wilson force."""
         from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
-        from src.HMCpy.fermion import wilson_fermion_force
+        from HMCpy.fermion import wilson_fermion_force
 
         torch.manual_seed(123)
         U = U_fn()
@@ -329,7 +325,7 @@ class TestCloverFermion:
         """Fermion force has correct shape and finite values."""
         if fermion_type == "wilson":
             from qcd_ml.qcd.dirac import dirac_wilson
-            from src.HMCpy.fermion import wilson_fermion_force
+            from HMCpy.fermion import wilson_fermion_force
             torch.manual_seed(789)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
@@ -339,7 +335,7 @@ class TestCloverFermion:
             F = wilson_fermion_force(U, psi, D)
         else:  # clover
             from qcd_ml.qcd.dirac import dirac_wilson_clover
-            from src.HMCpy.fermion import wilson_clover_fermion_force
+            from HMCpy.fermion import wilson_clover_fermion_force
             torch.manual_seed(789)
             U = U_fn()
             csw = 1.5
@@ -371,7 +367,7 @@ class TestGaugeTransformation:
 
         from qcd_ml.qcd.dirac import dirac_wilson
 
-        from src.HMCpy.fermion import wilson_fermion_force
+        from HMCpy.fermion import wilson_fermion_force
 
         torch.manual_seed(12346)
         U = hot_start()

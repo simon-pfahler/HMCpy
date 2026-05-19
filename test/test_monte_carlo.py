@@ -1,13 +1,9 @@
 """Tests for HMCpy.monte_carlo module: momentum sampling and Metropolis criterion."""
 
 import math
-import os
-import sys
 
 import pytest
 import torch
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from test.conftest import NC, cold_start
 

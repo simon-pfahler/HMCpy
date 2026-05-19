@@ -16,10 +16,18 @@ Shared functions:
   - hot_start: Generate hot start gauge field (random SU(3) links)
   - random_momenta: Generate random traceless Hermitian momenta
   - conjugate_gradient: CG solver for Hermitian positive-definite systems
+  - random_SU3: Generate random SU(3) matrix
+  - apply_gauge_transform: Apply gauge transformation to gauge field
 """
+
+import os
+import sys
 
 import pytest
 import torch
+
+# Add src to path so tests can import HMCpy
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 
 @pytest.fixture

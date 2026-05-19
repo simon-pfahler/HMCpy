@@ -165,7 +165,7 @@ def gauge_force(U: torch.Tensor, beta: float) -> torch.Tensor:
 
         Q = torch.matmul(U[mu], sigma)
 
-        A = Q - Q.adjoint()
+        A = Q - Q.conj().transpose(-1, -2)
         A -= (torch.einsum("...ii->...", A) / 3).unsqueeze(-1).unsqueeze(
             -1
         ) * eye

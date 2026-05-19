@@ -16,7 +16,7 @@ from qcd_ml.base.operations import v_spin_const_transform
 from qcd_ml.qcd.dirac import gamma as gamma_list
 from qcd_ml.util.solver import GMRES
 
-from .utility import gell_mann_matrices
+from .utility import su3_generators
 
 gamma = torch.stack(gamma_list)
 gamma5 = gamma[0] @ gamma[1] @ gamma[2] @ gamma[3]
@@ -108,9 +108,6 @@ def wilson_fermion_force(
     F : torch.Tensor, same shape as U [4, Lx, Ly, Lz, Lt, Nc, Nc]
         Fermion force, traceless Hermitian at each link
     """
-
-    gens = 0.5 * gell_mann_matrices
-
     eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype, device=U.device)
 
     Ddag_psi = v_spin_const_transform(
@@ -120,14 +117,14 @@ def wilson_fermion_force(
     zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
     zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
     xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
-    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gens, Ddag_psi)
+    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", su3_generators, Ddag_psi)
     xi_2 = torch.stack(
         [
             torch.stack([v_hop(U, mu, 1, Ti_Ddag_psi[i]) for mu in range(4)])
             for i in range(8)
         ]
     )
-    f_1 = torch.einsum("m...sc,icd,m...sd->im...", zeta_1, gens, xi_1)
+    f_1 = torch.einsum("m...sc,icd,m...sd->im...", zeta_1, su3_generators, xi_1)
     f_2 = torch.einsum("m...sc,im...sc->im...", zeta_2, xi_2)
     f_2 = torch.stack(
         [torch.roll(f_2[:, mu], -1, dims=mu + 1) for mu in range(4)], dim=1
@@ -135,7 +132,7 @@ def wilson_fermion_force(
 
     F = torch.einsum(
         "icd,im...->m...cd",
-        gens,
+        su3_generators,
         (f_1 + f_2).imag.to(torch.cdouble),
     )
 
@@ -182,8 +179,6 @@ def wilson_clover_fermion_force(
     if csw == 0.0:
         return F_wilson
 
-    gens = 0.5 * gell_mann_matrices
-
     Ddag_psi = v_spin_const_transform(
         gamma5, D(v_spin_const_transform(gamma5, psi.clone()))
     )
@@ -214,21 +209,22 @@ def wilson_clover_fermion_force(
     ) -> torch.Tensor:
         """Plaquette in (μ, ν)-direction with generator T_i at position p."""
         result = field.clone()
+        gen = su3_generators[i]
 
         if p == 0:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
+            result = torch.einsum("cd,...d->...c", gen, result)
         result = v_hop(U, mu, mudir, result)
         if p == 1:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
+            result = torch.einsum("cd,...d->...c", gen, result)
         result = v_hop(U, nu, nudir, result)
         if p == 2:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
+            result = torch.einsum("cd,...d->...c", gen, result)
         result = v_hop(U, mu, -mudir, result)
         if p == 3:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
+            result = torch.einsum("cd,...d->...c", gen, result)
         result = v_hop(U, nu, -nudir, result)
         if p == 4:
-            result = torch.einsum("cd,...d->...c", gens[i], result)
+            result = torch.einsum("cd,...d->...c", gen, result)
 
         return result
 
@@ -347,7 +343,7 @@ def wilson_clover_fermion_force(
 
     # Combine generator contributions with T_i matrices
     F_clover = torch.einsum(
-        "icd,im...->m...cd", gens, f_clover.imag.to(torch.cdouble)
+        "icd,im...->m...cd", su3_generators, f_clover.imag.to(torch.cdouble)
     )
 
     # Combine Wilson and clover forces

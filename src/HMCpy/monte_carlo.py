@@ -33,7 +33,7 @@ from .physics import (
     kinetic_energy,
     wilson_gauge_action,
 )
-from .utility import gell_mann_matrices
+from .utility import gell_mann_matrices, su3_generators
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
@@ -62,9 +62,7 @@ def sample_momenta(U: torch.Tensor) -> torch.Tensor:
 
     ps = torch.randn(4, *lattice_sizes, 8, dtype=torch.double).to(torch.cdouble)
 
-    return torch.einsum("...i,ikl->...kl", ps, 0.5 * gell_mann_matrices).to(
-        U.device
-    )
+    return torch.einsum("...i,ikl->...kl", ps, su3_generators).to(U.device)
 
 
 # ---------------------------------------------------------------------------

@@ -1,16 +1,5 @@
 """
-integrator.py -- Symplectic (leapfrog / Störmer-Verlet) integrator for HMC.
-
-The molecular-dynamics equations of motion are:
-
-    dU_mu(x)/dt  = P_mu(x) . U_mu(x)
-    dP_mu(x)/dt  = F_gauge(U) + F_fermion(phi, U)
-
-The total force is the sum of the gauge force and (optionally) the fermion
-force from a pseudofermion field phi.
-
-SU(3) link update: U_mu <- exp(eps * P_mu) . U_mu
-  -- torch.linalg.matrix_exp for the matrix exponential.
+integrator.py -- Symplectic integrators for HMC.
 """
 
 from typing import Callable
