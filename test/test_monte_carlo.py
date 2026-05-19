@@ -54,16 +54,12 @@ class TestMonteCarlo:
 
     # --- Metropolis accept/reject ---
 
-    @pytest.mark.parametrize("dH", [-1e-10, -1.0, -100.0])
-    def test_metropolis_accepts_negative_dH(self, dH):
-        """Metropolis always accepts when delta_H < 0."""
+    @pytest.mark.parametrize("dH", [-1e-10, -1.0, -100.0, 0.0])
+    def test_metropolis_nonpositive_dH(self, dH):
+        """Metropolis always accepts when delta_H <= 0."""
         assert metropolis_accept(torch.tensor(dH)) is True
 
-    def test_metropolis_accepts_zero_dH(self):
-        """Metropolis always accepts when delta_H = 0."""
-        assert metropolis_accept(torch.tensor(0.0)) is True
-
-    def test_metropolis_rejects_infinite_dH(self, seed):
+    def test_metropolis_infinite_dH(self, seed):
         """Metropolis never accepts when delta_H -> infinity."""
         torch.manual_seed(seed)
         assert metropolis_accept(torch.tensor(1e10)) is False
