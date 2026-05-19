@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from test.conftest import hot_start, random_momenta
+from conftest import hot_start, random_momenta
 
 from HMCpy.integrator import _exp_update_U, leapfrog, omf4
 from HMCpy.physics import gauge_force, hamiltonian

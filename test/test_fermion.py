@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from test.conftest import (
+from conftest import (
     cold_start,
     conjugate_gradient,
     hot_start,
@@ -363,7 +363,7 @@ class TestGaugeTransformation:
 
     def test_wilson_fermion_force_transforms_correctly(self, mass, L, NC, dtype):
         r"""Wilson fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-        from test.conftest import apply_gauge_transform, random_SU3
+        from conftest import apply_gauge_transform, random_SU3
 
         from qcd_ml.qcd.dirac import dirac_wilson
 
@@ -422,7 +422,7 @@ class TestGaugeTransformation:
 
     def test_wilson_clover_fermion_force_transforms_correctly(self, mass, L, NC, dtype):
         r"""Wilson-Clover fermion force transforms as F_μ(x) -> Omega(x) F_μ(x) Omega^\dag(x)."""
-        from test.conftest import apply_gauge_transform, random_SU3
+        from conftest import apply_gauge_transform, random_SU3
 
         from qcd_ml.qcd.dirac import dirac_wilson_clover
 

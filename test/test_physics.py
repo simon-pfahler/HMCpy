@@ -3,7 +3,7 @@
 import pytest
 import torch
 
-from test.conftest import (
+from conftest import (
     cold_start,
     hot_start,
     random_momenta,
@@ -20,7 +20,7 @@ from HMCpy.physics import (
     wilson_gauge_action,
 )
 from HMCpy.utility import gell_mann_matrices
-from test.conftest import apply_gauge_transform, random_SU3
+from conftest import apply_gauge_transform, random_SU3
 
 
 class TestPhysics:
