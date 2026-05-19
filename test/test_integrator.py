@@ -5,7 +5,7 @@ import torch
 
 from conftest import hot_start, random_momenta
 
-from HMCpy.integrator import _exp_update_U, leapfrog, omf4
+from HMCpy.integrator import exp_update_U, leapfrog, omf4
 from HMCpy.physics import gauge_force, hamiltonian
 
 
@@ -49,22 +49,26 @@ class TestIntegrator:
         return U + eps * P
 
     @pytest.mark.parametrize("integrator", [leapfrog, omf4])
-    def test_time_reversibility_HO(self, integrator):
-        """Symplectic integrator is time-reversible for harmonic oscillator."""
-        U0, P0 = torch.ones(1, dtype=torch.double), torch.zeros(
-            1, dtype=torch.double
-        )
-        U1, P1 = integrator(U0, P0, 4, self._HO_force, 0.05, self._HO_update)
-        U2, P2 = integrator(U1, -P1, 4, self._HO_force, 0.05, self._HO_update)
-        assert torch.allclose(U2, U0, atol=1e-9)
-        assert torch.allclose(P2, -P0, atol=1e-9)
+    @pytest.mark.parametrize("system", ["HO", "MD"])
+    def test_time_reversibility(self, integrator, system, beta):
+        """Symplectic integrator is time-reversible for HO and MD systems."""
+        if system == "HO":
+            U0, P0 = torch.ones(1, dtype=torch.double), torch.zeros(
+                1, dtype=torch.double
+            )
+            force_fn, update_fn = self._HO_force, self._HO_update
+            n_steps, eps = 4, 0.05
+        else:  # MD
+            U0, P0 = hot_start(), random_momenta(hot_start())
+            force_fn, update_fn = lambda U: self._MD_force(U, beta), None
+            n_steps, eps = 10, 1.0
 
-    @pytest.mark.parametrize("integrator", [leapfrog, omf4])
-    def test_time_reversibility_MD(self, integrator, beta):
-        """Symplectic integrator is time-reversible for MD simulation."""
-        U0, P0 = hot_start(), random_momenta(hot_start())
-        U1, P1 = integrator(U0, P0, 10, lambda U: self._MD_force(U, beta), 1)
-        U2, P2 = integrator(U1, -P1, 10, lambda U: self._MD_force(U, beta), 1)
+        if update_fn is not None:
+            U1, P1 = integrator(U0, P0, n_steps, force_fn, eps, update_fn)
+            U2, P2 = integrator(U1, -P1, n_steps, force_fn, eps, update_fn)
+        else:
+            U1, P1 = integrator(U0, P0, n_steps, force_fn, eps)
+            U2, P2 = integrator(U1, -P1, n_steps, force_fn, eps)
         assert torch.allclose(U2, U0, atol=1e-9)
         assert torch.allclose(P2, -P0, atol=1e-9)
 
@@ -88,7 +92,7 @@ class TestIntegrator:
 
     def test_exp_update_stays_on_su3(self, NC, dtype):
         """exp(i * eps * P) * U remains in SU(3)."""
-        U_new = _exp_update_U(hot_start(), random_momenta(hot_start()), 0.1)
+        U_new = exp_update_U(hot_start(), random_momenta(hot_start()), 0.1)
         eye = torch.eye(NC, dtype=dtype).expand_as(U_new)
         UUdag = U_new @ U_new.conj().transpose(-1, -2)
         assert torch.allclose(UUdag, eye, atol=1e-10)

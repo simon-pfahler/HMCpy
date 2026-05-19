@@ -43,34 +43,30 @@ def _plaquette(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
 
 def _staple(U: torch.Tensor, mu: int, nu: int) -> torch.Tensor:
     """
-    Sum of the two staples in the (mu,nu)-plane for link direction mu:
+    Sum of the two staples in the (mu,nu)-plane for link direction mu.
 
-        forward  staple: U_nu(x+mu)     . U_mu(x+nu)^dag . U_nu(x)^dag
-        backward staple: U_nu(x+mu-nu)^dag . U_mu(x-nu)^dag  . U_nu(x-nu)
+    Forward staple:  U_nu(x+mu)     . U_mu(x+nu)^dag . U_nu(x)^dag
+    Backward staple: U_nu(x+mu-nu)^dag . U_mu(x-nu)^dag . U_nu(x-nu)
 
     Returns shape [Lx, Ly, Lz, Lt, Nc, Nc].
     """
     Umu = U[mu]
     Unu = U[nu]
 
-    # Forward staple
-    Unu_fwd = torch.roll(Unu, -1, dims=mu)  # U_nu(x+mu)
-    Umu_fwd = torch.roll(Umu, -1, dims=nu)  # U_mu(x+nu)
-    fwd = torch.matmul(
-        Unu_fwd,
-        torch.matmul(
-            Umu_fwd.conj().transpose(-1, -2), Unu.conj().transpose(-1, -2)
-        ),
-    )
+    # Forward staple: U_nu(x+mu) . U_mu(x+nu)^dag . U_nu(x)^dag
+    Unu_fwd = torch.roll(Unu, -1, dims=mu)
+    Umu_fwd = torch.roll(Umu, -1, dims=nu)
+    fwd = torch.matmul(Unu_fwd, Umu_fwd.conj().transpose(-1, -2))
+    fwd = torch.matmul(fwd, Unu.conj().transpose(-1, -2))
 
-    # Backward staple
-    Unu_bwd = torch.roll(Unu, 1, dims=nu)  # U_nu(x-nu)
-    Unu_bwd_mu = torch.roll(Unu_bwd, -1, dims=mu)  # U_nu(x+mu-nu)
-    Umu_bwd = torch.roll(Umu, 1, dims=nu)  # U_mu(x-nu)
+    # Backward staple: U_nu(x+mu-nu)^dag . U_mu(x-nu)^dag . U_nu(x-nu)
+    Unu_bwd = torch.roll(Unu, 1, dims=nu)
+    Unu_bwd_mu = torch.roll(Unu_bwd, -1, dims=mu)
+    Umu_bwd = torch.roll(Umu, 1, dims=nu)
     bwd = torch.matmul(
-        Unu_bwd_mu.conj().transpose(-1, -2),
-        torch.matmul(Umu_bwd.conj().transpose(-1, -2), Unu_bwd),
+        Unu_bwd_mu.conj().transpose(-1, -2), Umu_bwd.conj().transpose(-1, -2)
     )
+    bwd = torch.matmul(bwd, Unu_bwd)
 
     return fwd + bwd
 
@@ -246,7 +242,7 @@ def reunitarize(U: torch.Tensor) -> torch.Tensor:
     U_proj : torch.Tensor, same shape -- each link is an SU(3) matrix
     """
     # torch.linalg.svd returns (A, S, Bh) where M = A @ diag(S) @ Bh
-    A, _S, Bh = torch.linalg.svd(U)
+    A, _, Bh = torch.linalg.svd(U)
     U_unitary = torch.matmul(A, Bh)  # unitary, shape as U
 
     # Fix determinant: divide by det^(1/Nc) to land on SU(3)

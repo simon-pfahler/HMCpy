@@ -67,13 +67,24 @@ def mass():
 
 
 # ---------------------------------------------------------------------------
+# Solver options
+# ---------------------------------------------------------------------------
+
+GMRES_OPTS = {"maxiter": 1000, "eps": 1e-10, "inner_iter": 10}
+
+
+# ---------------------------------------------------------------------------
 # Gauge field initialization
 # ---------------------------------------------------------------------------
 
 
 def cold_start(L=2, Nc=3) -> torch.Tensor:
     """Generate a cold start gauge field with all links = identity."""
-    return torch.eye(Nc, dtype=torch.complex128).expand(4, L, L, L, L, Nc, Nc).clone()
+    return (
+        torch.eye(Nc, dtype=torch.complex128)
+        .expand(4, L, L, L, L, Nc, Nc)
+        .clone()
+    )
 
 
 def hot_start(L=2, Nc=3, seed=42) -> torch.Tensor:

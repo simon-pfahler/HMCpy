@@ -2,14 +2,14 @@
 
 import pytest
 import torch
-
 from conftest import (
+    apply_gauge_transform,
     cold_start,
     hot_start,
     random_momenta,
+    random_SU3,
 )
 
-from HMCpy.monte_carlo import sample_momenta
 from HMCpy.physics import (
     _plaquette,
     gauge_force,
@@ -19,8 +19,7 @@ from HMCpy.physics import (
     reunitarize,
     wilson_gauge_action,
 )
-from HMCpy.utility import gell_mann_matrices
-from conftest import apply_gauge_transform, random_SU3
+from HMCpy.utility import su3_generators
 
 
 class TestPhysics:
@@ -125,7 +124,7 @@ class TestPhysics:
     # --- Gauge force gradient check ---
 
     def _num_force_comp(self, U, mu, site, a, beta, eps=1e-5):
-        gen = 0.5 * gell_mann_matrices[a]
+        gen = su3_generators[a]
         exp_p = torch.linalg.matrix_exp(1j * eps * gen)
         exp_m = torch.linalg.matrix_exp(-1j * eps * gen)
         idx = (mu,) + site
@@ -137,7 +136,7 @@ class TestPhysics:
 
     def _ana_force_comp(self, F, mu, site, a):
         return -(
-            2 * torch.trace(0.5 * gell_mann_matrices[a] @ F[(mu,) + site])
+            2 * torch.trace(su3_generators[a] @ F[(mu,) + site])
         ).real.item()
 
     @pytest.mark.parametrize("mu", range(4))
@@ -163,7 +162,7 @@ class TestPhysics:
 
         eps, mu, site, a = 1e-5, 0, (0, 0, 0, 0), 0
         idx = (mu,) + site
-        gen = 0.5 * gell_mann_matrices[a]
+        gen = su3_generators[a]
 
         U_pert = U.clone()
         U_pert[idx] = torch.linalg.matrix_exp(1j * eps * gen) @ U[idx]

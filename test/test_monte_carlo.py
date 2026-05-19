@@ -4,8 +4,7 @@ import math
 
 import pytest
 import torch
-
-from conftest import NC, cold_start
+from conftest import cold_start
 
 from HMCpy.monte_carlo import metropolis_accept, sample_momenta
 from HMCpy.physics import kinetic_energy

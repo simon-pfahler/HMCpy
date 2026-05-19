@@ -6,7 +6,7 @@ from typing import Callable
 
 import torch
 
-from .utility import _exp_update_U
+from .utility import exp_update_U
 
 # ---------------------------------------------------------------------------
 # Leapfrog (Störmer-Verlet) integrator
@@ -21,7 +21,7 @@ def leapfrog(
     step_size: float,
     U_update: Callable[
         [torch.Tensor, torch.Tensor, float], torch.Tensor
-    ] = _exp_update_U,
+    ] = exp_update_U,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Leapfrog integrator for HMC molecular dynamics.
@@ -29,7 +29,6 @@ def leapfrog(
     Parameters
     ----------
     U, P       : initial phase-space point
-    beta       : inverse coupling
     n_steps    : number of leapfrog steps
     force      : Function to obtain the force for a given field U
     step_size  : MD step size epsilon
@@ -63,7 +62,7 @@ def omf4(
     step_size: float,
     U_update: Callable[
         [torch.Tensor, torch.Tensor, float], torch.Tensor
-    ] = _exp_update_U,
+    ] = exp_update_U,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     OMF4 (Omelyan-Mryglod-Folk) 4th-order symplectic integrator.

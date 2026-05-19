@@ -33,7 +33,7 @@ from .physics import (
     kinetic_energy,
     wilson_gauge_action,
 )
-from .utility import gell_mann_matrices, su3_generators
+from .utility import su3_generators
 
 # ---------------------------------------------------------------------------
 # Momentum sampling
@@ -200,7 +200,7 @@ def hmc_step(
         U_new, P_new = omf4(U, P, **integrator_kwargs)
     else:
         raise ValueError(
-            f"Unknown integrator '{integrator}'. Choose 'leapfrog'."
+            f"Unknown integrator '{integrator}'. Choose 'leapfrog' or 'omf4'."
         )
 
     # ---- Proposed Hamiltonian ----
