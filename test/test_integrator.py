@@ -53,7 +53,7 @@ class TestIntegrator:
     def _HO_update(self, U, P, eps):
         return U + eps * P
 
-    @pytest.mark.parametrize("integrator,name", [(leapfrog, "leapfrog")])
+    @pytest.mark.parametrize("integrator,name", [(leapfrog, "leapfrog"), (omf4, "omf4")])
     def test_time_reversibility_HO(self, integrator, name):
         """Symplectic integrator is time-reversible for harmonic oscillator."""
         U0, P0 = torch.ones(1, dtype=torch.double), torch.zeros(
@@ -105,9 +105,10 @@ class TestIntegrator:
             atol=1e-10,
         )
 
-    def test_leapfrog_stays_on_su3(self, beta, NC, dtype):
-        """Leapfrog integration preserves SU(3)."""
-        U_new, _ = leapfrog(
+    @pytest.mark.parametrize("integrator", [leapfrog, omf4])
+    def test_integrator_stays_on_su3(self, integrator, beta, NC, dtype):
+        """Symplectic integration preserves SU(3)."""
+        U_new, _ = integrator(
             hot_start(), random_momenta(hot_start()), 5, lambda U: self._MD_force(U, beta), 0.05
         )
         eye = torch.eye(NC, dtype=dtype).expand_as(U_new)
