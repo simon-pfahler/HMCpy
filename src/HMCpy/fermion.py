@@ -49,12 +49,14 @@ def apply_DDdag_inv(
     chi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc], solution to (DD^dag) chi = phi
     """
 
+    gamma5_device = gamma5.to(phi.device)
+
     def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
         """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
         # D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity
-        gamma5_psi = v_spin_const_transform(gamma5, psi)
+        gamma5_psi = v_spin_const_transform(gamma5_device, psi)
         D_gamma5_psi = D(gamma5_psi)
-        Ddag_psi = v_spin_const_transform(gamma5, D_gamma5_psi)
+        Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
         return D(Ddag_psi)
 
     chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
@@ -108,23 +110,28 @@ def wilson_fermion_force(
     F : torch.Tensor, same shape as U [4, Lx, Ly, Lz, Lt, Nc, Nc]
         Fermion force, traceless Hermitian at each link
     """
-    eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype, device=U.device)
+    device = psi.device
+
+    eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype)
+
+    gamma5_device = gamma5.to(device)
+    gen_device = su3_generators.to(device)
 
     Ddag_psi = v_spin_const_transform(
-        gamma5, D(v_spin_const_transform(gamma5, psi.clone()))
+        gamma5_device, D(v_spin_const_transform(gamma5_device, psi.clone()))
     )
 
-    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma - eye_spin)
-    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), gamma + eye_spin)
+    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), (gamma - eye_spin).to(device))
+    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), (gamma + eye_spin).to(device))
     xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
-    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", su3_generators, Ddag_psi)
+    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gen_device, Ddag_psi)
     xi_2 = torch.stack(
         [
             torch.stack([v_hop(U, mu, 1, Ti_Ddag_psi[i]) for mu in range(4)])
             for i in range(8)
         ]
     )
-    f_1 = torch.einsum("m...sc,icd,m...sd->im...", zeta_1, su3_generators, xi_1)
+    f_1 = torch.einsum("m...sc,icd,m...sd->im...", zeta_1, gen_device, xi_1)
     f_2 = torch.einsum("m...sc,im...sc->im...", zeta_2, xi_2)
     f_2 = torch.stack(
         [torch.roll(f_2[:, mu], -1, dims=mu + 1) for mu in range(4)], dim=1
@@ -132,7 +139,7 @@ def wilson_fermion_force(
 
     F = torch.einsum(
         "icd,im...->m...cd",
-        su3_generators,
+        gen_device,
         (f_1 + f_2).imag.to(torch.cdouble),
     )
 
@@ -178,9 +185,15 @@ def wilson_clover_fermion_force(
     # If csw is zero, return just the Wilson force
     if csw == 0.0:
         return F_wilson
+    
+    device = psi.device
+
+    gamma5_device = gamma5.to(device)
+    gamma_device = gamma.to(device)
+    gen_device = su3_generators.to(device)
 
     Ddag_psi = v_spin_const_transform(
-        gamma5, D(v_spin_const_transform(gamma5, psi.clone()))
+        gamma5_device, D(v_spin_const_transform(gamma5_device, psi.clone()))
     )
 
     # Compute sigma_{μν} = 1/2 [γ_μ, γ_ν]
@@ -188,7 +201,7 @@ def wilson_clover_fermion_force(
     for mu in range(4):
         for nu in range(4):
             sigma_mn[mu, nu] = 0.5 * (
-                gamma[mu] @ gamma[nu] - gamma[nu] @ gamma[mu]
+                gamma_device[mu] @ gamma_device[nu] - gamma_device[nu] @ gamma_device[mu]
             )
 
     lattice_dims = [psi.shape[d] for d in range(4)]
@@ -209,7 +222,7 @@ def wilson_clover_fermion_force(
     ) -> torch.Tensor:
         """Plaquette in (μ, ν)-direction with generator T_i at position p."""
         result = field.clone()
-        gen = su3_generators[i]
+        gen = gen_device[i]
 
         if p == 0:
             result = torch.einsum("cd,...d->...c", gen, result)
@@ -343,7 +356,7 @@ def wilson_clover_fermion_force(
 
     # Combine generator contributions with T_i matrices
     F_clover = torch.einsum(
-        "icd,im...->m...cd", su3_generators, f_clover.imag.to(torch.cdouble)
+        "icd,im...->m...cd", gen_device, f_clover.imag.to(torch.cdouble)
     )
 
     # Combine Wilson and clover forces
