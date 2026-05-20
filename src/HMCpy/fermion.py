@@ -31,23 +31,27 @@ def apply_DDdag_inv(
     phi: torch.Tensor,
     D: Callable[[torch.Tensor], torch.Tensor],
     GMRES_kwargs: dict | None = None,
+    solver: Callable | None = None,
 ) -> torch.Tensor:
     """
     Solve (DD^dag) chi = phi for chi using gamma_5-hermiticity.
 
     Uses D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity.
-    Solves (DD^dag) chi = phi via GMRES treating DD^dag as an operator.
+    Solves (DD^dag) chi = phi via a solver (default GMRES) treating DD^dag as an operator.
 
     Parameters
     ----------
     phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
     D : Dirac operator (callable: D(psi) returns D psi)
     GMRES_kwargs : optional dict of keyword arguments for GMRES solver
+    solver : optional callable solver function (default: GMRES from qcd_ml.util.solver)
 
     Returns
     -------
     chi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc], solution to (DD^dag) chi = phi
     """
+    if solver is None:
+        solver = GMRES
 
     gamma5_device = gamma5.to(phi.device)
 
@@ -59,7 +63,7 @@ def apply_DDdag_inv(
         Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
         return D(Ddag_psi)
 
-    chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
+    chi, _ = solver(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
     return chi
 
 

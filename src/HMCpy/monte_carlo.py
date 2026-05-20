@@ -17,6 +17,8 @@ One HMC trajectory:
   4. Metropolis accept/reject on delta_H = H_new - H_old
 """
 
+from typing import Callable
+
 import torch
 from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
@@ -106,6 +108,7 @@ def hmc_step(
     mass_parameter: float | None = None,
     csw: float = 1,
     GMRES_kwargs: dict | None = None,
+    solver: Callable | None = None,
 ) -> tuple[torch.Tensor, bool, float]:
     """
     One complete HMC update.
@@ -131,6 +134,7 @@ def hmc_step(
     csw                : csw factor for clover-term in Wilson-clover Dirac
                          operator
     GMRES_kwargs       : Keyword arguments for GMRES
+    solver             : Solver function to use in apply_DDdag_inv (default: GMRES)
 
     Returns
     -------
@@ -177,7 +181,9 @@ def hmc_step(
 
             def force(U):
                 D = dirac_wilson_clover(U, mass_parameter, csw=csw)
-                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                psi = apply_DDdag_inv(
+                    phi, D, GMRES_kwargs=GMRES_kwargs, solver=solver
+                )
                 return gauge_force(U, beta) + wilson_clover_fermion_force(
                     U, psi, D, csw
                 )
@@ -186,7 +192,9 @@ def hmc_step(
 
             def force(U):
                 D = dirac_wilson(U, mass_parameter)
-                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                psi = apply_DDdag_inv(
+                    phi, D, GMRES_kwargs=GMRES_kwargs, solver=solver
+                )
                 return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
 
     integrator_kwargs = dict(
@@ -213,7 +221,9 @@ def hmc_step(
             D_new = dirac_wilson(U_new, mass_parameter)
 
         # Solve (D_new D_new^dag) psi = phi for psi
-        psi = apply_DDdag_inv(phi, D_new, GMRES_kwargs=GMRES_kwargs)
+        psi = apply_DDdag_inv(
+            phi, D_new, GMRES_kwargs=GMRES_kwargs, solver=solver
+        )
 
         # Compute pseudofermion action S_pf = phi^dag psi
         S_pf_new = pseudofermion_action(phi, psi)
