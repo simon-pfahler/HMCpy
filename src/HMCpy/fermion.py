@@ -121,8 +121,12 @@ def wilson_fermion_force(
         gamma5_device, D(v_spin_const_transform(gamma5_device, psi.clone()))
     )
 
-    zeta_1 = torch.einsum("...sc,mst->m...tc", psi.conj(), (gamma - eye_spin).to(device))
-    zeta_2 = torch.einsum("...sc,mst->m...tc", psi.conj(), (gamma + eye_spin).to(device))
+    zeta_1 = torch.einsum(
+        "...sc,mst->m...tc", psi.conj(), (gamma - eye_spin).to(device)
+    )
+    zeta_2 = torch.einsum(
+        "...sc,mst->m...tc", psi.conj(), (gamma + eye_spin).to(device)
+    )
     xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
     Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gen_device, Ddag_psi)
     xi_2 = torch.stack(
@@ -185,7 +189,7 @@ def wilson_clover_fermion_force(
     # If csw is zero, return just the Wilson force
     if csw == 0.0:
         return F_wilson
-    
+
     device = psi.device
 
     gamma5_device = gamma5.to(device)
@@ -201,7 +205,8 @@ def wilson_clover_fermion_force(
     for mu in range(4):
         for nu in range(4):
             sigma_mn[mu, nu] = 0.5 * (
-                gamma_device[mu] @ gamma_device[nu] - gamma_device[nu] @ gamma_device[mu]
+                gamma_device[mu] @ gamma_device[nu]
+                - gamma_device[nu] @ gamma_device[mu]
             )
 
     lattice_dims = [psi.shape[d] for d in range(4)]
