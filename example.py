@@ -3,11 +3,15 @@ import torch
 
 from HMCpy import hmc_step, plaquette_average, reunitarize
 
-U = torch.eye(3, dtype=torch.cdouble).expand(4, 2, 2, 2, 2, 3, 3)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+U = torch.eye(3, dtype=torch.cdouble).expand(4, 2, 2, 2, 2, 3, 3).to(device)
 
 n_traj = 100000
 beta = 6.0
 mass = -0.5
+n_steps = 20
+step_size = 0.1
 
 plaquette_averages = np.zeros(n_traj)
 
@@ -15,8 +19,8 @@ for traj in range(n_traj):
     U, accepted, dH = hmc_step(
         U,
         beta=beta,
-        n_steps=20,
-        step_size=0.1,
+        n_steps=n_steps,
+        step_size=step_size,
         integrator="omf4",
         dynamic=True,
         mass_parameter=mass,
