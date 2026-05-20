@@ -11,7 +11,7 @@ A PyTorch-based Hybrid Monte Carlo (HMC) implementation for SU(3) lattice gauge 
 - **GPU-accelerated**: All computations run on CUDA-enabled GPUs
 - **Symplectic integrators**: Leapfrog (2nd order) and OMF4 (4th order)
 - **Reunitarization**: SU(3) projection via polar decomposition
-- **qcd_ml compatible**: Uses Dirac operators from [qcd_ml](https://github.com/mcgill-a2c2/qcd_ml)
+- **qcd_ml compatible**: Uses Dirac operators from [qcd_ml](https://github.com/daknuett/qcd_ml)
 
 ## Installation
 
