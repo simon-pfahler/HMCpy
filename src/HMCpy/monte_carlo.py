@@ -106,6 +106,7 @@ def hmc_step(
     mass_parameter: float | None = None,
     csw: float = 1,
     GMRES_kwargs: dict | None = None,
+    cpu_GMRES: bool = True,
 ) -> tuple[torch.Tensor, bool, float]:
     """
     One complete HMC update.
@@ -131,6 +132,8 @@ def hmc_step(
     csw                : csw factor for clover-term in Wilson-clover Dirac
                          operator
     GMRES_kwargs       : Keyword arguments for GMRES
+    cpu_GMRES          : If True (default), perform GMRES solve on CPU for better
+                         performance with small matrices. Set to False to use GPU.
 
     Returns
     -------
@@ -166,6 +169,9 @@ def hmc_step(
         # Compute pseudofermion action
         # S_pf = phi^dag (DD^dag)^-1 phi = chi^dag chi
         S_pf_old = pseudofermion_action(chi, chi)
+    
+    # Flag to use CPU for GMRES (faster for small-medium problems)
+    use_cpu_GMRES = cpu_GMRES and dynamic
 
     # ---- Initial Hamiltonian ----
     H_old = hamiltonian(U, P, beta) + S_pf_old
@@ -177,7 +183,13 @@ def hmc_step(
 
             def force(U):
                 D = dirac_wilson_clover(U, mass_parameter, csw=csw)
-                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                psi = apply_DDdag_inv(
+                    phi, D, GMRES_kwargs=GMRES_kwargs,
+                    U=U if use_cpu_GMRES else None,
+                    mass_parameter=mass_parameter if use_cpu_GMRES else None,
+                    csw=csw if use_cpu_GMRES else None,
+                    use_clover=use_clover
+                )
                 return gauge_force(U, beta) + wilson_clover_fermion_force(
                     U, psi, D, csw
                 )
@@ -186,7 +198,13 @@ def hmc_step(
 
             def force(U):
                 D = dirac_wilson(U, mass_parameter)
-                psi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_kwargs)
+                psi = apply_DDdag_inv(
+                    phi, D, GMRES_kwargs=GMRES_kwargs,
+                    U=U if use_cpu_GMRES else None,
+                    mass_parameter=mass_parameter if use_cpu_GMRES else None,
+                    csw=None,
+                    use_clover=False
+                )
                 return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
 
     integrator_kwargs = dict(
@@ -212,8 +230,14 @@ def hmc_step(
         else:
             D_new = dirac_wilson(U_new, mass_parameter)
 
-        # Solve (D_new D_new^dag) psi = phi for psi
-        psi = apply_DDdag_inv(phi, D_new, GMRES_kwargs=GMRES_kwargs)
+        # Solve (D_new D_new^dag) psi = phi for psi on CPU
+        psi = apply_DDdag_inv(
+            phi, D_new, GMRES_kwargs=GMRES_kwargs,
+            U=U_new if use_cpu_GMRES else None,
+            mass_parameter=mass_parameter if use_cpu_GMRES else None,
+            csw=csw if use_cpu_GMRES else None,
+            use_clover=use_clover
+        )
 
         # Compute pseudofermion action S_pf = phi^dag psi
         S_pf_new = pseudofermion_action(phi, psi)

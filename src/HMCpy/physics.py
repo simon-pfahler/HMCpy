@@ -231,7 +231,7 @@ def reunitarize(U: torch.Tensor) -> torch.Tensor:
     The polar factor is computed as  U_polar = M (M^dag M)^{-1/2},
     implemented via the SVD:  M = A S B^dag => U_polar = A B^dag.
 
-    This is the standard approach used in production HMC codes.
+    For small 3x3 matrices, SVD is faster on CPU.
 
     Parameters
     ----------
@@ -241,12 +241,15 @@ def reunitarize(U: torch.Tensor) -> torch.Tensor:
     -------
     U_proj : torch.Tensor, same shape -- each link is an SU(3) matrix
     """
+    # For small 3x3 matrices, SVD is faster on CPU
+    U_cpu = U.cpu()
+    
     # torch.linalg.svd returns (A, S, Bh) where M = A @ diag(S) @ Bh
-    A, _, Bh = torch.linalg.svd(U)
+    A, _, Bh = torch.linalg.svd(U_cpu)
     U_unitary = torch.matmul(A, Bh)  # unitary, shape as U
 
     # Fix determinant: divide by det^(1/Nc) to land on SU(3)
-    Nc = U.shape[-1]
+    Nc = U_cpu.shape[-1]
     det = torch.linalg.det(U_unitary)  # [...] complex scalar
     # (1/Nc)-th power of the determinant (keep phase only, |det|=1 already)
     phase = det / det.abs()  # det / |det|
@@ -255,4 +258,4 @@ def reunitarize(U: torch.Tensor) -> torch.Tensor:
     )
     U_proj = U_unitary / phase_root.unsqueeze(-1).unsqueeze(-1)
 
-    return U_proj
+    return U_proj.to(U.device)
