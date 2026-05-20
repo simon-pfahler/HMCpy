@@ -46,8 +46,6 @@ def exp_update_U(U: torch.Tensor, P: torch.Tensor, eps: float) -> torch.Tensor:
     P is su(3)-valued (traceless Hermitian), so exp(i * eps * P) is SU(3),
     ensuring the updated U stays on the SU(3) manifold.
 
-    For small 3x3 matrices, matrix exponential is faster on CPU.
-
     Parameters
     ----------
     U : torch.Tensor
@@ -62,6 +60,4 @@ def exp_update_U(U: torch.Tensor, P: torch.Tensor, eps: float) -> torch.Tensor:
     torch.Tensor
         Updated gauge field, same shape as U
     """
-    # Compute exp(i * eps * P) on CPU for better performance with small 3x3 matrices
-    exp_P = torch.linalg.matrix_exp(1j * eps * P.cpu())
-    return torch.matmul(exp_P.to(U.device), U)
+    return torch.matmul(torch.linalg.matrix_exp(1j * eps * P), U)

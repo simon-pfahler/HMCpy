@@ -13,7 +13,7 @@ from typing import Callable
 import torch
 from qcd_ml.base.hop import v_hop
 from qcd_ml.base.operations import v_spin_const_transform
-from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover, gamma as gamma_list
+from qcd_ml.qcd.dirac import gamma as gamma_list
 from qcd_ml.util.solver import GMRES
 
 from .utility import su3_generators
@@ -31,10 +31,6 @@ def apply_DDdag_inv(
     phi: torch.Tensor,
     D: Callable[[torch.Tensor], torch.Tensor],
     GMRES_kwargs: dict | None = None,
-    U: torch.Tensor | None = None,
-    mass_parameter: float | None = None,
-    csw: float | None = None,
-    use_clover: bool = True,
 ) -> torch.Tensor:
     """
     Solve (DD^dag) chi = phi for chi using gamma_5-hermiticity.
@@ -47,57 +43,23 @@ def apply_DDdag_inv(
     phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
     D : Dirac operator (callable: D(psi) returns D psi)
     GMRES_kwargs : optional dict of keyword arguments for GMRES solver
-    U : gauge field (optional), if provided and use_cpu_GMRES=True, used to recreate D on CPU
-    mass_parameter : mass parameter (optional), needed if U is provided
-    csw : clover coefficient (optional), needed if use_clover=True
-    use_clover : bool, whether to use clover term (default: True)
 
     Returns
     -------
     chi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc], solution to (DD^dag) chi = phi
     """
-    # Check if we should use CPU for GMRES
-    # We use CPU if U is provided (indicating we want explicit device control)
-    use_cpu = U is not None
-    
-    if use_cpu:
-        # Recreate Dirac operator on CPU and solve there
-        from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
-        
-        # Move phi and U to CPU
-        phi_cpu = phi.cpu()
-        U_cpu = U.cpu()
-        
-        # Create appropriate Dirac operator on CPU
-        if use_clover and csw is not None:
-            D_cpu = dirac_wilson_clover(U_cpu, mass_parameter, csw=csw)
-        else:
-            D_cpu = dirac_wilson(U_cpu, mass_parameter)
-        
-        gamma5_cpu = gamma5.cpu()
-        
-        def DDdag_op_cpu(psi: torch.Tensor) -> torch.Tensor:
-            """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
-            gamma5_psi = v_spin_const_transform(gamma5_cpu, psi)
-            D_gamma5_psi = D_cpu(gamma5_psi)
-            Ddag_psi = v_spin_const_transform(gamma5_cpu, D_gamma5_psi)
-            return D_cpu(Ddag_psi)
-        
-        chi_cpu, _ = GMRES(DDdag_op_cpu, phi_cpu.clone(), phi_cpu.clone(), **(GMRES_kwargs or {}))
-        chi = chi_cpu.to(phi.device)
-    else:
-        # Original GPU-based implementation
-        gamma5_device = gamma5.to(phi.device)
 
-        def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
-            """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
-            gamma5_psi = v_spin_const_transform(gamma5_device, psi)
-            D_gamma5_psi = D(gamma5_psi)
-            Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
-            return D(Ddag_psi)
+    gamma5_device = gamma5.to(phi.device)
 
-        chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
-    
+    def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
+        """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
+        # D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity
+        gamma5_psi = v_spin_const_transform(gamma5_device, psi)
+        D_gamma5_psi = D(gamma5_psi)
+        Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
+        return D(Ddag_psi)
+
+    chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
     return chi
 
 

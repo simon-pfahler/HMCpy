@@ -25,7 +25,6 @@ for traj in range(n_traj):
         dynamic=True,
         mass_parameter=mass,
         csw=1.0,
-        cpu_GMRES=True,  # Use CPU for GMRES solve (faster for small-medium lattices)
     )
 
     plaquette_averages[traj] = plaquette_average(U).item()
