@@ -26,7 +26,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install torch --index-url https://download.pytorch.org/whl/cpu
         pip install pytest
-        pip install git+https://github.com/daknuett/qcd_ml.git
+        pip install git+https://github.com/simon-pfahler/qcd_ml.git
         pip install -e .
 
     - name: Run tests
