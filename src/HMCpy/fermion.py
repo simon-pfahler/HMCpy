@@ -2,90 +2,18 @@
 fermion.py -- Pseudofermion fields for dynamical fermions in HMC.
 
 This module provides:
-  - apply_DDdag_inv(phi, D) -- Solves (DD^dag) chi = phi for chi
-  - pseudofermion_action(phi, chi) -- S_pf = phi^dag chi where chi = (DD^dag)^{-1} phi
-  - wilson_fermion_force(U, psi) -- Wilson fermion force for HMC
-  - wilson_clover_fermion_force(U, psi, csw) -- Wilson-clover fermion force for HMC
+  - wilson_fermion_force(U, psi, Ddag_inv_psi) -- Wilson fermion force for HMC
+  - wilson_clover_fermion_force(U, psi, Ddag_inv_psi, csw) -- Wilson-clover fermion force for HMC
 """
-
-from typing import Callable
 
 import torch
 from qcd_ml.base.hop import v_hop
-from qcd_ml.base.operations import v_spin_const_transform
 from qcd_ml.qcd.dirac import gamma as gamma_list
-from qcd_ml.util.solver import GMRES
 
 from .utility import su3_generators
 
 gamma = torch.stack(gamma_list)
 gamma5 = gamma[0] @ gamma[1] @ gamma[2] @ gamma[3]
-
-
-# ---------------------------------------------------------------------------
-# Solve (DD^dag) chi = phi
-# ---------------------------------------------------------------------------
-
-
-def apply_DDdag_inv(
-    phi: torch.Tensor,
-    D: Callable[[torch.Tensor], torch.Tensor],
-    GMRES_kwargs: dict | None = None,
-    solver: Callable | None = None,
-) -> torch.Tensor:
-    """
-    Solve (DD^dag) chi = phi for chi using gamma_5-hermiticity.
-
-    Uses D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity.
-    Solves (DD^dag) chi = phi via a solver (default GMRES) treating DD^dag as an operator.
-
-    Parameters
-    ----------
-    phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-    D : Dirac operator (callable: D(psi) returns D psi)
-    GMRES_kwargs : optional dict of keyword arguments for GMRES solver
-    solver : optional callable solver function (default: GMRES from qcd_ml.util.solver)
-
-    Returns
-    -------
-    chi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc], solution to (DD^dag) chi = phi
-    """
-    if solver is None:
-        solver = GMRES
-
-    gamma5_device = gamma5.to(phi.device)
-
-    def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
-        """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
-        # D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity
-        gamma5_psi = v_spin_const_transform(gamma5_device, psi)
-        D_gamma5_psi = D(gamma5_psi)
-        Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
-        return D(Ddag_psi)
-
-    chi, _ = solver(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
-    return chi
-
-
-def pseudofermion_action(
-    phi: torch.Tensor,
-    chi: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Pseudofermion action: S_pf = phi^dag (DD^dag)^{-1} phi.
-
-    Parameters
-    ----------
-    phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-    chi : solution to (DD^dag) chi = phi, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-
-    Returns
-    -------
-    S_pf : real scalar tensor, phi^dag chi where chi = (DD^dag)^{-1} phi
-    """
-    S_pf = (phi.conj() * chi).sum().real
-    return S_pf
-
 
 # ---------------------------------------------------------------------------
 # Fermion force for Wilson Dirac operator
@@ -95,7 +23,7 @@ def pseudofermion_action(
 def wilson_fermion_force(
     U: torch.Tensor,
     psi: torch.Tensor,
-    D: Callable[[torch.Tensor], torch.Tensor],
+    Ddag_inv_psi: torch.Tensor,
 ) -> torch.Tensor:
     """
     Fermion force for the Wilson Dirac operator.
@@ -105,9 +33,9 @@ def wilson_fermion_force(
     U : torch.Tensor, shape [4, Lx, Ly, Lz, Lt, Nc, Nc]
         Gauge field (Nc=3 for SU(3))
     psi : torch.Tensor, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-        Pseudofermion field: ψ = (D D^dag)^{-1} φ (Ns=4 for Dirac spinors)
-    D : Callable[[torch.Tensor], torch.Tensor]
-        Dirac operator (e.g., dirac_wilson_clover from qcd_ml)
+        Pseudofermion field: ψ = D^{-1} φ (Ns=4 for Dirac spinors)
+    Ddag_inv_psi: torch.Tensor, shape[Lx, Ly, Lz, Lt, Ns, Nc]
+        Pseudofermion field: D^{-dag} ψ (Ns=4 for Dirac spinors)
 
     Returns
     -------
@@ -118,24 +46,19 @@ def wilson_fermion_force(
 
     eye_spin = torch.eye(psi.shape[-2], dtype=U.dtype)
 
-    gamma5_device = gamma5.to(device)
     gen_device = su3_generators.to(device)
 
-    Ddag_psi = v_spin_const_transform(
-        gamma5_device, D(v_spin_const_transform(gamma5_device, psi.clone()))
-    )
-
     zeta_1 = torch.einsum(
-        "...sc,mst->m...tc", psi.conj(), (gamma - eye_spin).to(device)
+        "...sc,mst->m...tc", Ddag_inv_psi.conj(), (gamma - eye_spin).to(device)
     )
     zeta_2 = torch.einsum(
-        "...sc,mst->m...tc", psi.conj(), (gamma + eye_spin).to(device)
+        "...sc,mst->m...tc", Ddag_inv_psi.conj(), (gamma + eye_spin).to(device)
     )
-    xi_1 = torch.stack([v_hop(U, mu, -1, Ddag_psi) for mu in range(4)])
-    Ti_Ddag_psi = torch.einsum("icd,...d->i...c", gen_device, Ddag_psi)
+    xi_1 = torch.stack([v_hop(U, mu, -1, psi) for mu in range(4)])
+    Ti_psi = torch.einsum("icd,...d->i...c", gen_device, psi)
     xi_2 = torch.stack(
         [
-            torch.stack([v_hop(U, mu, 1, Ti_Ddag_psi[i]) for mu in range(4)])
+            torch.stack([v_hop(U, mu, 1, Ti_psi[i]) for mu in range(4)])
             for i in range(8)
         ]
     )
@@ -162,7 +85,7 @@ def wilson_fermion_force(
 def wilson_clover_fermion_force(
     U: torch.Tensor,
     psi: torch.Tensor,
-    D: Callable[[torch.Tensor], torch.Tensor],
+    Ddag_inv_psi: torch.Tensor,
     csw: float,
 ) -> torch.Tensor:
     """
@@ -177,8 +100,8 @@ def wilson_clover_fermion_force(
         Gauge field (Nc=3 for SU(3))
     psi : torch.Tensor, shape [Lx, Ly, Lz, Lt, Ns, Nc]
         Pseudofermion field: ψ = (D D^dag)^{-1} φ (Ns=4 for Dirac spinors)
-    D : Callable[[torch.Tensor], torch.Tensor]
-        Dirac operator (e.g., dirac_wilson_clover from qcd_ml)
+    Ddag_inv_psi : torch.Tensor, shape [Lx, Ly, Lz, Lt, Ns, Nc]
+        Pseudofermion field: D^{-dag} ψ (Ns=4 for Dirac spinors)
     csw : float
         Clover coefficient (improvement coefficient)
 
@@ -188,7 +111,7 @@ def wilson_clover_fermion_force(
         Fermion force, traceless Hermitian at each link
     """
     # First compute the Wilson fermion force
-    F_wilson = wilson_fermion_force(U, psi, D)
+    F_wilson = wilson_fermion_force(U, psi, Ddag_inv_psi)
 
     # If csw is zero, return just the Wilson force
     if csw == 0.0:
@@ -196,13 +119,8 @@ def wilson_clover_fermion_force(
 
     device = psi.device
 
-    gamma5_device = gamma5.to(device)
     gamma_device = gamma.to(device)
     gen_device = su3_generators.to(device)
-
-    Ddag_psi = v_spin_const_transform(
-        gamma5_device, D(v_spin_const_transform(gamma5_device, psi.clone()))
-    )
 
     # Compute sigma_{μν} = 1/2 [γ_μ, γ_ν]
     sigma_mn = torch.zeros((4, 4, 4, 4), dtype=torch.cdouble, device=U.device)
@@ -274,7 +192,7 @@ def wilson_clover_fermion_force(
         P_results = torch.stack(
             [
                 compute_P(
-                    resolve(a, mu), resolve(b, mu), mudir, nudir, p, i, Ddag_psi
+                    resolve(a, mu), resolve(b, mu), mudir, nudir, p, i, psi
                 )
                 for mu in range(4)
             ]
@@ -291,7 +209,7 @@ def wilson_clover_fermion_force(
             contrib += _make_contrib(sigma, "mu", 1, 1, 0, i, sigma, "...pc")
             contrib -= _make_contrib("mu", sigma, -1, 1, 4, i, sigma, "...pc")
             f_clover[i, sigma] += torch.einsum(
-                "...sc,...sc->...", psi.conj(), contrib
+                "...sc,...sc->...", Ddag_inv_psi.conj(), contrib
             )
 
     # contributions with offset mu
@@ -299,7 +217,9 @@ def wilson_clover_fermion_force(
         for sigma in range(4):
             contrib = +_make_contrib(sigma, "mu", 1, -1, 3, i, sigma, "m...pc")
             contrib += _make_contrib("mu", sigma, -1, 1, 1, i, sigma, "m...pc")
-            inner = torch.einsum("...sc,m...sc->m...", psi.conj(), contrib)
+            inner = torch.einsum(
+                "...sc,m...sc->m...", Ddag_inv_psi.conj(), contrib
+            )
             f_clover[i, sigma] += torch.einsum(
                 "m...->...",
                 torch.stack(
@@ -312,7 +232,9 @@ def wilson_clover_fermion_force(
         for sigma in range(4):
             contrib = -_make_contrib(sigma, "mu", 1, 1, 3, i, sigma, "m...pc")
             contrib -= _make_contrib("mu", sigma, 1, 1, 1, i, sigma, "m...pc")
-            inner = torch.einsum("...sc,m...sc->m...", psi.conj(), contrib)
+            inner = torch.einsum(
+                "...sc,m...sc->m...", Ddag_inv_psi.conj(), contrib
+            )
             f_clover[i, sigma] += torch.einsum(
                 "m...->...",
                 torch.stack(
@@ -328,7 +250,9 @@ def wilson_clover_fermion_force(
             contrib += _make_contrib("mu", sigma, 1, -1, 3, i, sigma, "...pc")
             contrib -= _make_contrib(sigma, "mu", -1, -1, 1, i, sigma, "...pc")
             f_clover[i, sigma] += torch.roll(
-                torch.einsum("...sc,...sc->...", psi.conj(), contrib), -1, sigma
+                torch.einsum("...sc,...sc->...", Ddag_inv_psi.conj(), contrib),
+                -1,
+                sigma,
             )
 
     # contributions with offset sigma+mu
@@ -336,7 +260,9 @@ def wilson_clover_fermion_force(
         for sigma in range(4):
             contrib = +_make_contrib("mu", sigma, -1, -1, 2, i, sigma, "m...pc")
             contrib += _make_contrib(sigma, "mu", -1, -1, 2, i, sigma, "m...pc")
-            inner = torch.einsum("...sc,m...sc->m...", psi.conj(), contrib)
+            inner = torch.einsum(
+                "...sc,m...sc->m...", Ddag_inv_psi.conj(), contrib
+            )
             f_clover[i, sigma] += torch.einsum(
                 "m...->...",
                 torch.stack(
@@ -352,7 +278,9 @@ def wilson_clover_fermion_force(
         for sigma in range(4):
             contrib = -_make_contrib(sigma, "mu", -1, 1, 2, i, sigma, "m...pc")
             contrib -= _make_contrib("mu", sigma, 1, -1, 2, i, sigma, "m...pc")
-            inner = torch.einsum("...sc,m...sc->m...", psi.conj(), contrib)
+            inner = torch.einsum(
+                "...sc,m...sc->m...", Ddag_inv_psi.conj(), contrib
+            )
             f_clover[i, sigma] += torch.einsum(
                 "m...->...",
                 torch.stack(

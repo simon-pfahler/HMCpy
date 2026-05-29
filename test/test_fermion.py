@@ -13,13 +13,16 @@ from conftest import (
     random_SU3,
 )
 from qcd_ml.base.operations import v_spin_const_transform
-from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
+from qcd_ml.qcd.dirac import (
+    dirac_wilson,
+    dirac_wilson_clover,
+    dirac_wilson_clover_dag,
+    dirac_wilson_dag,
+)
 from qcd_ml.util.solver import GMRES
 
 from HMCpy.fermion import (
-    apply_DDdag_inv,
     gamma5,
-    pseudofermion_action,
     wilson_clover_fermion_force,
     wilson_fermion_force,
 )
@@ -64,9 +67,7 @@ def _numerical_force_comp(
     chi_p = solve_DDdag(phi, D_factory(U_p))
     chi_m = solve_DDdag(phi, D_factory(U_m))
 
-    return (
-        pseudofermion_action(phi, chi_p) - pseudofermion_action(phi, chi_m)
-    ).item() / (2 * eps)
+    return ((phi.conj() * (chi_p - chi_m)).sum().real.item()) / (2 * eps)
 
 
 def _autograd_force_comp(
@@ -94,7 +95,7 @@ def _autograd_force_comp(
             )
 
         chi = conjugate_gradient(DDdag_op, phi, **(CG_kwargs or {}))
-        return pseudofermion_action(phi, chi).real
+        return (phi.conj() * chi).sum().real
 
     grad_full = torch.autograd.grad(S_pf(U_grad), U_grad, create_graph=False)[0]
     link_grad = (
@@ -127,8 +128,19 @@ class TestFermionAction:
         phi = torch.ones(L, L, L, L, 4, NC, dtype=dtype)
         phi_norm = phi.norm()
         phi = phi / phi_norm
-        chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
-        S = pseudofermion_action(phi, chi)
+
+        # Compute chi = (DD^dag)^{-1} phi using DDdag operator
+        gamma5_device = gamma5.to(phi.device)
+
+        def DDdag_op(psi_in: torch.Tensor) -> torch.Tensor:
+            """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
+            gamma5_psi = v_spin_const_transform(gamma5_device, psi_in)
+            D_gamma5_psi = D(gamma5_psi)
+            Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
+            return D(Ddag_psi)
+
+        chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        S = (phi.conj() * chi).sum().real
 
         assert S.item() > 0, f"Action should be positive, got {S.item()}"
         assert torch.isfinite(S), "Action should be finite"
@@ -144,10 +156,21 @@ class TestFermionAction:
         U = cold_start()
         D = dirac_wilson(U, mass_parameter=mass)
         phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-        chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
 
-        assert (pseudofermion_action(phi, chi)).isreal()
-        assert torch.isfinite(pseudofermion_action(phi, chi))
+        # Compute chi = (DD^dag)^{-1} phi
+        gamma5_device = gamma5.to(phi.device)
+
+        def DDdag_op(psi_in: torch.Tensor) -> torch.Tensor:
+            gamma5_psi = v_spin_const_transform(gamma5_device, psi_in)
+            D_gamma5_psi = D(gamma5_psi)
+            Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
+            return D(Ddag_psi)
+
+        chi, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        S = (phi.conj() * chi).sum().real
+
+        assert S.isreal()
+        assert torch.isfinite(S)
 
     def test_pseudofermion_action_scales_quadratically(
         self, mass, L, NC, dtype
@@ -158,11 +181,20 @@ class TestFermionAction:
         D = dirac_wilson(U, mass_parameter=mass)
         phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
 
-        chi1 = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
-        chi2 = apply_DDdag_inv(2 * phi, D, GMRES_kwargs=GMRES_OPTS)
+        # Compute DDdag operator
+        gamma5_device = gamma5.to(phi.device)
 
-        S1 = pseudofermion_action(phi, chi1)
-        S2 = pseudofermion_action(2 * phi, chi2)
+        def DDdag_op(psi_in: torch.Tensor) -> torch.Tensor:
+            gamma5_psi = v_spin_const_transform(gamma5_device, psi_in)
+            D_gamma5_psi = D(gamma5_psi)
+            Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
+            return D(Ddag_psi)
+
+        chi1, _ = GMRES(DDdag_op, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        chi2, _ = GMRES(DDdag_op, (2 * phi).clone(), (2 * phi).clone(), **(GMRES_OPTS or {}))
+
+        S1 = (phi.conj() * chi1).sum().real
+        S2 = ((2 * phi).conj() * chi2).sum().real
 
         assert S2.item() / S1.item() == pytest.approx(4.0, rel=1e-5)
 
@@ -181,11 +213,14 @@ class TestFermionForce:
             torch.manual_seed(123)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
+            Ddag = dirac_wilson_dag(U, mass_parameter=mass)
 
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=torch.complex128)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            F = wilson_fermion_force(U, psi, D)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=torch.complex128)
+            phi = phi / phi.norm()
+            # New interface: psi = D^{-1} phi, Ddag_inv_psi = (D^dag)^{-1} psi = (DD^dag)^{-1} phi
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
+            F = wilson_fermion_force(U, psi, Ddag_inv_psi)
 
             def D_factory(U_in):
                 return dirac_wilson(U_in, mass_parameter=mass)
@@ -194,17 +229,20 @@ class TestFermionForce:
 
             torch.manual_seed(456)
             U = U_fn()
+            m = mass
             csw = 1.0
-            D = dirac_wilson_clover(U, mass_parameter=mass, csw=csw)
+            D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+            Ddag = dirac_wilson_clover_dag(U, mass_parameter=m, csw=csw)
 
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            phi = phi / phi.norm()
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
 
-            F = wilson_clover_fermion_force(U, psi, D, csw)
+            F = wilson_clover_fermion_force(U, psi, Ddag_inv_psi, csw)
 
             def D_factory(U_in):
-                return dirac_wilson_clover(U_in, mass_parameter=mass, csw=csw)
+                return dirac_wilson_clover(U_in, mass_parameter=m, csw=csw)
 
         mu, site = 0, (0, 0, 0, 0)
         num_kw = {"maxiter": 2000, "eps": 1e-8, "inner_iter": 20}
@@ -212,10 +250,10 @@ class TestFermionForce:
 
         for a in range(8):
             num = _numerical_force_comp(
-                U, chi, D_factory, mu, site, a, GMRES_kwargs=num_kw
+                U, phi, D_factory, mu, site, a, GMRES_kwargs=num_kw
             )
             aut = _autograd_force_comp(
-                U, chi, D_factory, mu, site, a, CG_kwargs=aut_kw
+                U, phi, D_factory, mu, site, a, CG_kwargs=aut_kw
             )
             ana = _analytic_force_comp(F, mu, site, a)
 
@@ -237,20 +275,25 @@ class TestFermionForce:
             torch.manual_seed(100)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            F = wilson_fermion_force(U, psi, D)
+            Ddag = dirac_wilson_dag(U, mass_parameter=mass)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            phi = phi / phi.norm()
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
+            F = wilson_fermion_force(U, psi, Ddag_inv_psi)
         else:  # clover
 
             torch.manual_seed(790)
             U = U_fn()
+            m = mass
             csw = 1.5
-            D = dirac_wilson_clover(U, mass_parameter=mass, csw=csw)
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            F = wilson_clover_fermion_force(U, psi, D, csw)
+            D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+            Ddag = dirac_wilson_clover_dag(U, mass_parameter=m, csw=csw)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            phi = phi / phi.norm()
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
+            F = wilson_clover_fermion_force(U, psi, Ddag_inv_psi, csw)
 
         # Check Hermitian: F = F^dag
         for mu in range(4):
@@ -276,18 +319,22 @@ class TestFermionForce:
         m = mass
         csw = 0.0
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-        chi = chi / chi.norm()
+        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+        phi = phi / phi.norm()
 
         # Compute Wilson force
         D_wilson = dirac_wilson(U, mass_parameter=m)
-        psi_wilson = apply_DDdag_inv(chi, D_wilson, GMRES_kwargs=GMRES_OPTS)
-        F_wilson = wilson_fermion_force(U, psi_wilson, D_wilson)
+        Ddag_wilson = dirac_wilson_dag(U, mass_parameter=m)
+        psi_wilson, _ = GMRES(D_wilson, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        Ddag_inv_psi_wilson, _ = GMRES(Ddag_wilson, psi_wilson.clone(), psi_wilson.clone(), **(GMRES_OPTS or {}))
+        F_wilson = wilson_fermion_force(U, psi_wilson, Ddag_inv_psi_wilson)
 
         # Compute Wilson-Clover force with csw=0
         D_clover = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
-        psi_clover = apply_DDdag_inv(chi, D_clover, GMRES_kwargs=GMRES_OPTS)
-        F_clover = wilson_clover_fermion_force(U, psi_clover, D_clover, csw)
+        Ddag_clover = dirac_wilson_clover_dag(U, mass_parameter=m, csw=csw)
+        psi_clover, _ = GMRES(D_clover, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        Ddag_inv_psi_clover, _ = GMRES(Ddag_clover, psi_clover.clone(), psi_clover.clone(), **(GMRES_OPTS or {}))
+        F_clover = wilson_clover_fermion_force(U, psi_clover, Ddag_inv_psi_clover, csw)
 
         # They should be equal
         assert torch.allclose(
@@ -303,20 +350,25 @@ class TestFermionForce:
             torch.manual_seed(789)
             U = U_fn()
             D = dirac_wilson(U, mass_parameter=mass)
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            F = wilson_fermion_force(U, psi, D)
+            Ddag = dirac_wilson_dag(U, mass_parameter=mass)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            phi = phi / phi.norm()
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
+            F = wilson_fermion_force(U, psi, Ddag_inv_psi)
         else:  # clover
 
             torch.manual_seed(789)
             U = U_fn()
+            m = mass
             csw = 1.5
-            D = dirac_wilson_clover(U, mass_parameter=mass, csw=csw)
-            chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-            chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
-            F = wilson_clover_fermion_force(U, psi, D, csw)
+            D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+            Ddag = dirac_wilson_clover_dag(U, mass_parameter=m, csw=csw)
+            phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+            phi = phi / phi.norm()
+            psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+            Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
+            F = wilson_clover_fermion_force(U, psi, Ddag_inv_psi, csw)
 
         # Check shape
         assert F.shape == U.shape, f"Force shape {F.shape} != U shape {U.shape}"
@@ -337,31 +389,34 @@ class TestGaugeTransformation:
         m = mass
 
         D = dirac_wilson(U, mass_parameter=m)
+        Ddag = dirac_wilson_dag(U, mass_parameter=m)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-        chi = chi / chi.norm()
-        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+        phi = phi / phi.norm()
+        psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
 
         # Compute original Wilson fermion force
-        F_original = wilson_fermion_force(U, psi, D)
+        F_original = wilson_fermion_force(U, psi, Ddag_inv_psi)
 
         # Generate random gauge transformation
         Omega = random_SU3(seed=1000)
         Omega_field = Omega.expand(*U.shape[1:5], NC, NC)
 
-        # Transform psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
-        # Result: psi_transformed(x, s, c)
+        # Transform psi and Ddag_inv_psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
         psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, psi)
+        Ddag_inv_psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, Ddag_inv_psi)
 
         # Apply gauge transformation to U
         U_transformed = apply_gauge_transform(U, Omega_field)
 
         # Create new Dirac operator with transformed U
         D_transformed = dirac_wilson(U_transformed, mass_parameter=m)
+        Ddag_transformed = dirac_wilson_dag(U_transformed, mass_parameter=m)
 
         # Compute transformed Wilson fermion force
         F_transformed = wilson_fermion_force(
-            U_transformed, psi_transformed, D_transformed
+            U_transformed, psi_transformed, Ddag_inv_psi_transformed
         )
 
         # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)
@@ -393,21 +448,23 @@ class TestGaugeTransformation:
         csw = 1.0
 
         D = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
+        Ddag = dirac_wilson_clover_dag(U, mass_parameter=m, csw=csw)
 
-        chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-        chi = chi / chi.norm()
-        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
+        phi = phi / phi.norm()
+        psi, _ = GMRES(D, phi.clone(), phi.clone(), **(GMRES_OPTS or {}))
+        Ddag_inv_psi, _ = GMRES(Ddag, psi.clone(), psi.clone(), **(GMRES_OPTS or {}))
 
         # Compute original Wilson-Clover fermion force
-        F_original = wilson_clover_fermion_force(U, psi, D, csw)
+        F_original = wilson_clover_fermion_force(U, psi, Ddag_inv_psi, csw)
 
         # Generate random gauge transformation
         Omega = random_SU3(seed=1001)
         Omega_field = Omega.expand(*U.shape[1:5], NC, NC)
 
-        # Transform psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
-        # Result: psi_transformed(x, s, c)
+        # Transform psi and Ddag_inv_psi: psi(x, s, c) -> Omega(x, c, c') * psi(x, s, c')
         psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, psi)
+        Ddag_inv_psi_transformed = torch.einsum("...ac,...sc->...sa", Omega_field, Ddag_inv_psi)
 
         # Apply gauge transformation to U
         U_transformed = apply_gauge_transform(U, Omega_field)
@@ -416,10 +473,13 @@ class TestGaugeTransformation:
         D_transformed = dirac_wilson_clover(
             U_transformed, mass_parameter=m, csw=csw
         )
+        Ddag_transformed = dirac_wilson_clover_dag(
+            U_transformed, mass_parameter=m, csw=csw
+        )
 
         # Compute transformed Wilson-Clover fermion force
         F_transformed = wilson_clover_fermion_force(
-            U_transformed, psi_transformed, D_transformed, csw
+            U_transformed, psi_transformed, Ddag_inv_psi_transformed, csw
         )
 
         # Expected: F_μ(x) -> Omega(x) F_μ(x) Omega^dag(x)

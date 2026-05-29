@@ -8,7 +8,7 @@ For pure gauge:
 
 For Nf=2 Wilson fermions (one pseudofermion field):
     H = T(P) + S_W(U) + S_pf(phi, U)
-    S_pf = phi^dag (D^dag D)^{-1} phi
+    S_pf = (D^{-1} phi)^dag (D^{-1} phi)
 
 One HMC trajectory:
   1. Sample momenta  P ~ exp(-T(P))
@@ -20,14 +20,15 @@ One HMC trajectory:
 from typing import Callable
 
 import torch
-from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
-
-from .fermion import (
-    apply_DDdag_inv,
-    pseudofermion_action,
-    wilson_clover_fermion_force,
-    wilson_fermion_force,
+from qcd_ml.qcd.dirac import (
+    dirac_wilson,
+    dirac_wilson_clover,
+    dirac_wilson_clover_dag,
+    dirac_wilson_dag,
 )
+from qcd_ml.util.solver import GMRES
+
+from .fermion import wilson_clover_fermion_force, wilson_fermion_force
 from .integrator import leapfrog, omf4
 from .physics import (
     gauge_force,
@@ -108,7 +109,7 @@ def hmc_step(
     mass_parameter: float | None = None,
     csw: float = 1,
     GMRES_kwargs: dict | None = None,
-    solver: Callable | None = None,
+    solver: Callable = GMRES,
 ) -> tuple[torch.Tensor, bool, float]:
     """
     One complete HMC update.
@@ -134,7 +135,7 @@ def hmc_step(
     csw                : csw factor for clover-term in Wilson-clover Dirac
                          operator
     GMRES_kwargs       : Keyword arguments for GMRES
-    solver             : Solver function to use in apply_DDdag_inv (default: GMRES)
+    solver             : Solver function to use for solving linear systems (default: GMRES)
 
     Returns
     -------
@@ -152,6 +153,7 @@ def hmc_step(
     # ---- Pseudofermion sampling (if dynamical fermions) ----
     chi = None
     phi = None
+    force = lambda U: gauge_force(U, beta)
     S_pf_old = 0
     use_clover = csw != 0.0 and csw is not None
     if dynamic:
@@ -163,40 +165,46 @@ def hmc_step(
         # Create Dirac operator for current gauge field
         if use_clover:
             D_old = dirac_wilson_clover(U, mass_parameter, csw=csw)
+
+            def force(U):
+                D = dirac_wilson_clover(U, mass_parameter, csw=csw)
+                Ddag = dirac_wilson_clover_dag(U, mass_parameter, csw=csw)
+                psi, _ = solver(
+                    D, phi.clone(), phi.clone(), **(GMRES_kwargs or {})
+                )
+                Ddag_inv_psi, _ = solver(
+                    Ddag, psi.clone(), psi.clone(), **(GMRES_kwargs or {})
+                )
+                return gauge_force(U, beta) + wilson_clover_fermion_force(
+                    U, psi, Ddag_inv_psi, csw
+                )
+
         else:
             D_old = dirac_wilson(U, mass_parameter)
+
+            def force(U):
+                D = dirac_wilson(U, mass_parameter)
+                Ddag = dirac_wilson_dag(U, mass_parameter)
+                psi, _ = solver(
+                    D, phi.clone(), phi.clone(), **(GMRES_kwargs or {})
+                )
+                Ddag_inv_psi, _ = solver(
+                    Ddag, psi.clone(), psi.clone(), **(GMRES_kwargs or {})
+                )
+                return gauge_force(U, beta) + wilson_fermion_force(
+                    U, psi, Ddag_inv_psi
+                )
+
         phi = D_old(chi)
 
         # Compute pseudofermion action
         # S_pf = phi^dag (DD^dag)^-1 phi = chi^dag chi
-        S_pf_old = pseudofermion_action(chi, chi)
+        S_pf_old = (chi.conj() * chi).sum().real
 
     # ---- Initial Hamiltonian ----
     H_old = hamiltonian(U, P, beta) + S_pf_old
 
     # ---- MD trajectory ----
-    force = lambda U: gauge_force(U, beta)
-    if dynamic:
-        if use_clover:
-
-            def force(U):
-                D = dirac_wilson_clover(U, mass_parameter, csw=csw)
-                psi = apply_DDdag_inv(
-                    phi, D, GMRES_kwargs=GMRES_kwargs, solver=solver
-                )
-                return gauge_force(U, beta) + wilson_clover_fermion_force(
-                    U, psi, D, csw
-                )
-
-        else:
-
-            def force(U):
-                D = dirac_wilson(U, mass_parameter)
-                psi = apply_DDdag_inv(
-                    phi, D, GMRES_kwargs=GMRES_kwargs, solver=solver
-                )
-                return gauge_force(U, beta) + wilson_fermion_force(U, psi, D)
-
     integrator_kwargs = dict(
         n_steps=n_steps,
         force=force,
@@ -221,12 +229,10 @@ def hmc_step(
             D_new = dirac_wilson(U_new, mass_parameter)
 
         # Solve (D_new D_new^dag) psi = phi for psi
-        psi = apply_DDdag_inv(
-            phi, D_new, GMRES_kwargs=GMRES_kwargs, solver=solver
-        )
+        psi, _ = solver(D_new, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
 
         # Compute pseudofermion action S_pf = phi^dag psi
-        S_pf_new = pseudofermion_action(phi, psi)
+        S_pf_new = (psi.conj() * psi).sum().real
 
     H_new = kinetic_energy(P_new) + wilson_gauge_action(U_new, beta) + S_pf_new
 
