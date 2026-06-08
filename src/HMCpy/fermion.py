@@ -3,7 +3,6 @@ fermion.py -- Pseudofermion fields for dynamical fermions in HMC.
 
 This module provides:
   - apply_DDdag_inv(phi, D) -- Solves (DD^dag) chi = phi for chi
-  - pseudofermion_action(phi, chi) -- S_pf = phi^dag chi where chi = (DD^dag)^{-1} phi
   - wilson_fermion_force(U, psi) -- Wilson fermion force for HMC
   - wilson_clover_fermion_force(U, psi, csw) -- Wilson-clover fermion force for HMC
 """
@@ -53,38 +52,16 @@ def apply_DDdag_inv(
     if solver is None:
         solver = GMRES
 
-    gamma5_device = gamma5.to(phi.device)
-
     def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
         """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
-        # D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity
-        gamma5_psi = v_spin_const_transform(gamma5_device, psi)
-        D_gamma5_psi = D(gamma5_psi)
-        Ddag_psi = v_spin_const_transform(gamma5_device, D_gamma5_psi)
-        return D(Ddag_psi)
+        D.dag = True
+        res = D(psi)
+        D.dag = False
+        res = D(res)
+        return res
 
     chi, _ = solver(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
     return chi
-
-
-def pseudofermion_action(
-    phi: torch.Tensor,
-    chi: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Pseudofermion action: S_pf = phi^dag (DD^dag)^{-1} phi.
-
-    Parameters
-    ----------
-    phi : pseudofermion field, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-    chi : solution to (DD^dag) chi = phi, shape [Lx, Ly, Lz, Lt, Ns, Nc]
-
-    Returns
-    -------
-    S_pf : real scalar tensor, phi^dag chi where chi = (DD^dag)^{-1} phi
-    """
-    S_pf = (phi.conj() * chi).sum().real
-    return S_pf
 
 
 # ---------------------------------------------------------------------------

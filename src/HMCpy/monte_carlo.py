@@ -24,7 +24,6 @@ from qcd_ml.qcd.dirac import dirac_wilson, dirac_wilson_clover
 
 from .fermion import (
     apply_DDdag_inv,
-    pseudofermion_action,
     wilson_clover_fermion_force,
     wilson_fermion_force,
 )
@@ -169,7 +168,7 @@ def hmc_step(
 
         # Compute pseudofermion action
         # S_pf = phi^dag (DD^dag)^-1 phi = chi^dag chi
-        S_pf_old = pseudofermion_action(chi, chi)
+        S_pf_old = (chi.conj() * chi).sum().real
 
     # ---- Initial Hamiltonian ----
     H_old = hamiltonian(U, P, beta) + S_pf_old
@@ -226,7 +225,7 @@ def hmc_step(
         )
 
         # Compute pseudofermion action S_pf = phi^dag psi
-        S_pf_new = pseudofermion_action(phi, psi)
+        S_pf_new = (phi.conj() * psi).sum().real
 
     H_new = kinetic_energy(P_new) + wilson_gauge_action(U_new, beta) + S_pf_new
 

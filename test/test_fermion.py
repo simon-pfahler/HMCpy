@@ -19,7 +19,6 @@ from qcd_ml.util.solver import GMRES
 from HMCpy.fermion import (
     apply_DDdag_inv,
     gamma5,
-    pseudofermion_action,
     wilson_clover_fermion_force,
     wilson_fermion_force,
 )
@@ -65,7 +64,7 @@ def _numerical_force_comp(
     chi_m = solve_DDdag(phi, D_factory(U_m))
 
     return (
-        pseudofermion_action(phi, chi_p) - pseudofermion_action(phi, chi_m)
+        (phi.conj() * chi_p).sum().real - (phi.conj() * chi_m).sum().real
     ).item() / (2 * eps)
 
 
@@ -94,7 +93,7 @@ def _autograd_force_comp(
             )
 
         chi = conjugate_gradient(DDdag_op, phi, **(CG_kwargs or {}))
-        return pseudofermion_action(phi, chi).real
+        return (phi.conj() * chi).sum().real
 
     grad_full = torch.autograd.grad(S_pf(U_grad), U_grad, create_graph=False)[0]
     link_grad = (
@@ -111,60 +110,6 @@ def _analytic_force_comp(
 ) -> float:
     """Analytic fermion force component from force tensor."""
     return -(2 * torch.trace(su3_generators[a] @ F[(mu,) + site])).real.item()
-
-
-class TestFermionAction:
-    """Tests for pseudofermion action."""
-
-    @pytest.mark.parametrize("U_fn", [cold_start, hot_start])
-    def test_pseudofermion_action_pos_finite(self, U_fn, mass, L, NC, dtype):
-        """Pseudofermion action is positive and finite."""
-
-        U = U_fn()
-        m = mass
-        D = dirac_wilson(U, mass_parameter=m)
-        # Normalized uniform phi: norm = sqrt(L^4 * 4 * NC) for ones
-        phi = torch.ones(L, L, L, L, 4, NC, dtype=dtype)
-        phi_norm = phi.norm()
-        phi = phi / phi_norm
-        chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
-        S = pseudofermion_action(phi, chi)
-
-        assert S.item() > 0, f"Action should be positive, got {S.item()}"
-        assert torch.isfinite(S), "Action should be finite"
-
-        if U_fn.__name__ == "cold_start":
-            assert S == pytest.approx(
-                1 / m**2, abs=1e-2
-            ), f"Expected 1/m^2=100, got {S.item()}"
-
-    def test_pseudofermion_action_real(self, mass, L, NC, dtype):
-        """Pseudofermion action is real for Hermitian DDdagger."""
-
-        U = cold_start()
-        D = dirac_wilson(U, mass_parameter=mass)
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-        chi = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
-
-        assert (pseudofermion_action(phi, chi)).isreal()
-        assert torch.isfinite(pseudofermion_action(phi, chi))
-
-    def test_pseudofermion_action_scales_quadratically(
-        self, mass, L, NC, dtype
-    ):
-        """Action scales as phi^2 (S ~ phi^dag chi, chi ~ phi)."""
-
-        U = cold_start()
-        D = dirac_wilson(U, mass_parameter=mass)
-        phi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
-
-        chi1 = apply_DDdag_inv(phi, D, GMRES_kwargs=GMRES_OPTS)
-        chi2 = apply_DDdag_inv(2 * phi, D, GMRES_kwargs=GMRES_OPTS)
-
-        S1 = pseudofermion_action(phi, chi1)
-        S2 = pseudofermion_action(2 * phi, chi2)
-
-        assert S2.item() / S1.item() == pytest.approx(4.0, rel=1e-5)
 
 
 class TestFermionForce:

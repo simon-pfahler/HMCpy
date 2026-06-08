@@ -14,7 +14,6 @@ utility     : SU(3) generators and exponential update utilities
 
 from .fermion import (
     apply_DDdag_inv,
-    pseudofermion_action,
     wilson_clover_fermion_force,
     wilson_fermion_force,
 )
@@ -39,7 +38,6 @@ __all__ = [
     "hamiltonian",
     "reunitarize",
     # fermion
-    "pseudofermion_action",
     "apply_DDdag_inv",
     "wilson_fermion_force",
     "wilson_clover_fermion_force",
