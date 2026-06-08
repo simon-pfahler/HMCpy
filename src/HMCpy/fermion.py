@@ -13,7 +13,6 @@ import torch
 from qcd_ml.base.hop import v_hop
 from qcd_ml.base.operations import v_spin_const_transform
 from qcd_ml.qcd.dirac import gamma as gamma_list
-from qcd_ml.util.solver import GMRES
 
 from .utility import su3_generators
 
@@ -29,14 +28,14 @@ gamma5 = gamma[0] @ gamma[1] @ gamma[2] @ gamma[3]
 def apply_DDdag_inv(
     phi: torch.Tensor,
     D: Callable[[torch.Tensor], torch.Tensor],
+    solver: Callable,
     GMRES_kwargs: dict | None = None,
-    solver: Callable | None = None,
 ) -> torch.Tensor:
     """
     Solve (DD^dag) chi = phi for chi using gamma_5-hermiticity.
 
     Uses D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity.
-    Solves (DD^dag) chi = phi via a solver (default GMRES) treating DD^dag as an operator.
+    Solves (DD^dag) chi = phi via a solver treating DD^dag as an operator.
 
     Parameters
     ----------
@@ -49,18 +48,15 @@ def apply_DDdag_inv(
     -------
     chi : spinor field [Lx, Ly, Lz, Lt, Ns, Nc], solution to (DD^dag) chi = phi
     """
-    if solver is None:
-        solver = GMRES
 
     def DDdag_op(psi: torch.Tensor) -> torch.Tensor:
-        """Operator: (DD^dag) psi = D (gamma5 @ D (gamma5 @ psi))"""
         D.dag = True
         res = D(psi)
         D.dag = False
         res = D(res)
         return res
 
-    chi, _ = solver(DDdag_op, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
+    chi = solver(DDdag_op, D, phi.clone(), phi.clone(), **(GMRES_kwargs or {}))
     return chi
 
 

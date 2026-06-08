@@ -117,6 +117,19 @@ def random_momenta(U: torch.Tensor, seed=42) -> torch.Tensor:
 # ---------------------------------------------------------------------------
 
 
+def gmres_wrapper(A_op, D, b, x0, **kwargs):
+    """
+    Wrapper around GMRES solver to adapt to the new apply_DDdag_inv signature.
+    
+    The new apply_DDdag_inv calls solver(DDdag_op, D, phi, x0, ...)
+    but GMRES expects solver(A, b, x0, ...). This wrapper ignores the D parameter.
+    """
+    from qcd_ml.util.solver import GMRES
+    
+    result, info = GMRES(A_op, b, x0, **kwargs)
+    return result
+
+
 def conjugate_gradient(
     A_op: callable,
     b: torch.Tensor,

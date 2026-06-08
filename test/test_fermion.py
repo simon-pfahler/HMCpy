@@ -9,6 +9,7 @@ from conftest import (
     apply_gauge_transform,
     cold_start,
     conjugate_gradient,
+    gmres_wrapper,
     hot_start,
     random_SU3,
 )
@@ -129,7 +130,7 @@ class TestFermionForce:
 
             chi = torch.randn(L, L, L, L, 4, NC, dtype=torch.complex128)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
             F = wilson_fermion_force(U, psi, D)
 
             def D_factory(U_in):
@@ -144,7 +145,7 @@ class TestFermionForce:
 
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
 
             F = wilson_clover_fermion_force(U, psi, D, csw)
 
@@ -184,7 +185,7 @@ class TestFermionForce:
             D = dirac_wilson(U, mass_parameter=mass)
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
             F = wilson_fermion_force(U, psi, D)
         else:  # clover
 
@@ -194,7 +195,7 @@ class TestFermionForce:
             D = dirac_wilson_clover(U, mass_parameter=mass, csw=csw)
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
             F = wilson_clover_fermion_force(U, psi, D, csw)
 
         # Check Hermitian: F = F^dag
@@ -226,12 +227,12 @@ class TestFermionForce:
 
         # Compute Wilson force
         D_wilson = dirac_wilson(U, mass_parameter=m)
-        psi_wilson = apply_DDdag_inv(chi, D_wilson, GMRES_kwargs=GMRES_OPTS)
+        psi_wilson = apply_DDdag_inv(chi, D_wilson, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
         F_wilson = wilson_fermion_force(U, psi_wilson, D_wilson)
 
         # Compute Wilson-Clover force with csw=0
         D_clover = dirac_wilson_clover(U, mass_parameter=m, csw=csw)
-        psi_clover = apply_DDdag_inv(chi, D_clover, GMRES_kwargs=GMRES_OPTS)
+        psi_clover = apply_DDdag_inv(chi, D_clover, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
         F_clover = wilson_clover_fermion_force(U, psi_clover, D_clover, csw)
 
         # They should be equal
@@ -250,7 +251,7 @@ class TestFermionForce:
             D = dirac_wilson(U, mass_parameter=mass)
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
             F = wilson_fermion_force(U, psi, D)
         else:  # clover
 
@@ -260,7 +261,7 @@ class TestFermionForce:
             D = dirac_wilson_clover(U, mass_parameter=mass, csw=csw)
             chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
             chi = chi / chi.norm()
-            psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+            psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
             F = wilson_clover_fermion_force(U, psi, D, csw)
 
         # Check shape
@@ -285,7 +286,7 @@ class TestGaugeTransformation:
 
         chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
-        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
 
         # Compute original Wilson fermion force
         F_original = wilson_fermion_force(U, psi, D)
@@ -341,7 +342,7 @@ class TestGaugeTransformation:
 
         chi = torch.randn(L, L, L, L, 4, NC, dtype=dtype)
         chi = chi / chi.norm()
-        psi = apply_DDdag_inv(chi, D, GMRES_kwargs=GMRES_OPTS)
+        psi = apply_DDdag_inv(chi, D, gmres_wrapper, GMRES_kwargs=GMRES_OPTS)
 
         # Compute original Wilson-Clover fermion force
         F_original = wilson_clover_fermion_force(U, psi, D, csw)
