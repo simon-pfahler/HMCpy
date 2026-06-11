@@ -32,10 +32,7 @@ def apply_DDdag_inv(
     GMRES_kwargs: dict | None = None,
 ) -> torch.Tensor:
     """
-    Solve (DD^dag) chi = phi for chi using gamma_5-hermiticity.
-
-    Uses D^dag psi = gamma5 @ D(gamma5 @ psi) from gamma_5-hermiticity.
-    Solves (DD^dag) chi = phi via a solver treating DD^dag as an operator.
+    Solve (DD^dag) chi = phi
 
     Parameters
     ----------
